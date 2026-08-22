@@ -8,18 +8,21 @@ import (
 )
 
 type Config struct {
-	Port     int
-	LogLevel slog.Level
+	Port        int
+	LogLevel    slog.Level
+	DatabaseURL string
 }
 
 const (
 	defaultPort     = 8080
 	defaultLogLevel = "info"
+	defaultDSN      = "postgres://atlas:atlas@localhost:5433/atlas?sslmode=disable"
 )
 
 func Load() (Config, error) {
 	cfg := Config{
-		Port: defaultPort,
+		Port:        defaultPort,
+		DatabaseURL: defaultDSN,
 	}
 
 	portStr, ok := os.LookupEnv("ATLAS_PORT")
@@ -44,6 +47,9 @@ func Load() (Config, error) {
 		return Config{}, fmt.Errorf("ATLAS_LOG_LEVEL must be one of debug, info, warn, error: %w", err)
 	}
 	cfg.LogLevel = level
+	if dsn, ok := os.LookupEnv("ATLAS_DATABASE_URL"); ok && dsn != "" {
+		cfg.DatabaseURL = dsn
+	}
 
 	return cfg, nil
 }

@@ -15,8 +15,9 @@ func TestLoad(t *testing.T) {
 		{
 			name: "defaults when nothing is set",
 			want: Config{
-				Port:     defaultPort,
-				LogLevel: slog.LevelInfo,
+				Port:        defaultPort,
+				LogLevel:    slog.LevelInfo,
+				DatabaseURL: defaultDSN,
 			},
 		},
 		{
@@ -26,8 +27,9 @@ func TestLoad(t *testing.T) {
 				"ATLAS_LOG_LEVEL": "debug",
 			},
 			want: Config{
-				Port:     9000,
-				LogLevel: slog.LevelDebug,
+				Port:        9000,
+				LogLevel:    slog.LevelDebug,
+				DatabaseURL: defaultDSN,
 			},
 		},
 		{
@@ -36,8 +38,9 @@ func TestLoad(t *testing.T) {
 				"ATLAS_PORT": "",
 			},
 			want: Config{
-				Port:     defaultPort,
-				LogLevel: slog.LevelInfo,
+				Port:        defaultPort,
+				LogLevel:    slog.LevelInfo,
+				DatabaseURL: defaultDSN,
 			},
 		},
 		{
@@ -46,8 +49,9 @@ func TestLoad(t *testing.T) {
 				"ATLAS_LOG_LEVEL": "WARN",
 			},
 			want: Config{
-				Port:     defaultPort,
-				LogLevel: slog.LevelWarn,
+				Port:        defaultPort,
+				LogLevel:    slog.LevelWarn,
+				DatabaseURL: defaultDSN,
 			},
 		},
 		{

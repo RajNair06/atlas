@@ -7,14 +7,14 @@ import (
 	"testing"
 )
 
-func TestHealth(t *testing.T){
-	mux:=http.NewServeMux()
-	mux.HandleFunc("GET /health",health)
-	req:=httptest.NewRequest("GET","/health", nil)
-	w:=httptest.NewRecorder()
+func TestHealth(t *testing.T) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("GET /health", health)
+	req := httptest.NewRequest("GET", "/health", nil)
+	w := httptest.NewRecorder()
 	mux.ServeHTTP(w, req)
-	if w.Code != http.StatusOK{
-		t.Errorf("status = %d , want =%d ",w.Code,http.StatusOK)
+	if w.Code != http.StatusOK {
+		t.Errorf("status = %d , want =%d ", w.Code, http.StatusOK)
 
 	}
 	var body map[string]string
