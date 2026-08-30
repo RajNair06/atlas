@@ -17,7 +17,7 @@ func (s *server) handleCheckout(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, fmt.Sprintf("payment unreachable: %v", err), http.StatusBadGateway)
 		return
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		http.Error(w, "payment failed", http.StatusBadGateway)

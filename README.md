@@ -42,7 +42,6 @@ curl http://localhost:8080/buy
 ```sh
 make dev     # run the sample stack locally
 make test    # go test ./...
-make lint    # golangci-lint (falls back to go vet)
 make demo    # build + run the sample stack
 make clean   # remove built binaries
 ```

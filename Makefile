@@ -3,7 +3,7 @@ export
 
 BIN := bin
 
-.PHONY: dev demo build test lint clean
+.PHONY: dev demo build test clean
 
 build:
 	go build -o $(BIN)/payment ./examples/demo-shop/payment
@@ -21,14 +21,6 @@ dev: demo
 
 test:
 	go test ./...
-
-lint:
-	@if command -v golangci-lint >/dev/null 2>&1; then \
-		golangci-lint run ./...; \
-	else \
-		echo "golangci-lint not installed, falling back to go vet"; \
-		go vet ./...; \
-	fi
 
 clean:
 	rm -rf $(BIN)
