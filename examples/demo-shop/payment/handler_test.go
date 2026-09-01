@@ -5,14 +5,26 @@ import (
 	"net/http/httptest"
 	"testing"
 	"time"
+
+	"go.opentelemetry.io/otel/metric/noop"
 )
+
+func newTestServer(t *testing.T) *server {
+	t.Helper()
+	counter, err := noop.NewMeterProvider().Meter("test").Int64Counter("payment.charged")
+	if err != nil {
+		t.Fatal(err)
+	}
+	return &server{charged: counter}
+}
 
 func TestHandlePay(t *testing.T) {
 	t.Setenv("PAYMENT_DELAY", "1ms")
+	s := newTestServer(t)
 
 	start := time.Now()
 	rec := httptest.NewRecorder()
-	handlePay(rec, httptest.NewRequest(http.MethodPost, "/pay", nil))
+	s.handlePay(rec, httptest.NewRequest(http.MethodPost, "/pay", nil))
 
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d, want %d", rec.Code, http.StatusOK)
@@ -27,9 +39,10 @@ func TestHandlePay(t *testing.T) {
 
 func TestHandlePayUsesDefaultDelay(t *testing.T) {
 	t.Setenv("PAYMENT_DELAY", "")
+	s := newTestServer(t)
 
 	rec := httptest.NewRecorder()
-	handlePay(rec, httptest.NewRequest(http.MethodPost, "/pay", nil))
+	s.handlePay(rec, httptest.NewRequest(http.MethodPost, "/pay", nil))
 
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d, want %d", rec.Code, http.StatusOK)
