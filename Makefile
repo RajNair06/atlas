@@ -3,7 +3,15 @@ export
 
 BIN := bin
 
-.PHONY: dev demo build test clean
+COMPOSE := $(shell docker compose version >/dev/null 2>&1 && echo "docker compose" || echo "docker-compose")
+
+.PHONY: dev demo build test clean obs-up obs-down
+
+obs-up:
+	$(COMPOSE) up -d
+
+obs-down:
+	$(COMPOSE) down
 
 build:
 	go build -o $(BIN)/payment ./examples/demo-shop/payment
