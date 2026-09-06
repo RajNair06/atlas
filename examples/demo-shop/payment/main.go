@@ -6,10 +6,12 @@ import (
 )
 
 func main() {
-	http.HandleFunc("/", hello)
-	log.Fatal(http.ListenAndServe(":8082", nil))
+	mux := http.NewServeMux()
+	mux.HandleFunc("POST /pay", handlePay)
+	log.Fatal(http.ListenAndServe(":8082", mux))
 }
 
-func hello(w http.ResponseWriter, r *http.Request) {
-	w.Write([]byte("hello"))
+func handlePay(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	w.Write([]byte(`{"status":"charged"}`))
 }
