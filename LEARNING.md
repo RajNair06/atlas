@@ -13,5 +13,7 @@
 
 ## Progress
 
-- I1 — naive demo-shop trio, cascade failure, timeouts: **done**
-- I2 — observability: **reverted**, will be rebuilt from first principles in small steps
+See `ROADMAP.md` for the rung-wise plan of the entire project.
+
+- I1 — rebuilding from first principles: rungs 1–5 done, currently at rung 6 (environment variables as config)
+- I2 — observability: will be rebuilt from first principles after I1 stands again
