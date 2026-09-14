@@ -27,25 +27,10 @@ The whole project, broken into rungs. A **rung** = one concept + one small chang
 
 ---
 
-## I2 — Observability ▶ (next increment)
+## I2 — Observability ▶
 
-1. Structured logging (why printf-logs die at scale; slog; key=value)
-2. Logs are not enough (grep three services for one request — feel the pain)
-3. Correlation IDs (a request ID that rides along in a header)
-4. Traces: spans, parents, trees (the shape of one request)
-5. Context as the carrier (`context.Context`, why every Go function takes it first)
-6. OTel SDK by hand (create spans manually, see them work)
-7. otelhttp middleware (automatic spans, the `traceparent` header on the wire)
-8. Jaeger (read your first span tree in a UI)
-9. RED metrics (counters, histograms, rate/errors/duration)
-10. The OTel Collector (why a middleman; receivers → processors → exporters)
-11. Goroutine trap lab (lose a trace across a goroutine, fix it)
-12. Bug-hunt lab (logs-only vs traces: time both — the "20 min → 40 sec" artifact)
-
-## I2 — Observability
-
-1. Structured logging (why printf-logs die at scale; slog; key=value)
-2. Logs are not enough (grep three services for one request — feel the pain)
+1. ✅ Structured logging (why printf-logs die at scale; slog; key=value)
+2. ▶ Logs are not enough (grep three services for one request — feel the pain)
 3. Correlation IDs (a request ID that rides along in a header)
 4. Traces: spans, parents, trees (the shape of one request)
 5. Context as the carrier (`context.Context`, why every Go function takes it first)
