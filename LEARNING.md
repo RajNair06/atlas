@@ -15,5 +15,5 @@
 
 See `ROADMAP.md` for the rung-wise plan of the entire project.
 
-- I1 — rebuilding from first principles: rungs 1–5 done, currently at rung 6 (environment variables as config)
-- I2 — observability: will be rebuilt from first principles after I1 stands again
+- **I1 — complete**: naive trio, cascade failure, timeouts, testing, CI — all 14 rungs done
+- I2 — observability: next increment, will be rebuilt from first principles
