@@ -2,12 +2,16 @@ package main
 
 import (
 	"log"
+	"log/slog"
 	"net/http"
 	"os"
 	"time"
 )
 
 func main() {
+	logger := slog.New(slog.NewJSONHandler(os.Stdout, nil)).With("service", "checkout")
+	slog.SetDefault(logger)
+
 	s := &server{
 		paymentURL: envOr("PAYMENT_URL", "http://localhost:8082"),
 		client:     &http.Client{Timeout: paymentTimeout()},
@@ -17,7 +21,7 @@ func main() {
 	mux.HandleFunc("POST /checkout", s.handleCheckout)
 
 	addr := ":" + envOr("CHECKOUT_PORT", "8081")
-	log.Printf("checkout listening on %s (payment at %s)", addr, s.paymentURL)
+	slog.Info("checkout listening", "port", addr, "payment_url", s.paymentURL)
 	log.Fatal(http.ListenAndServe(addr, mux))
 }
 

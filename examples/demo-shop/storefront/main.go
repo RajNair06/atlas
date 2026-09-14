@@ -2,12 +2,16 @@ package main
 
 import (
 	"log"
+	"log/slog"
 	"net/http"
 	"os"
 	"time"
 )
 
 func main() {
+	logger := slog.New(slog.NewJSONHandler(os.Stdout, nil)).With("service", "storefront")
+	slog.SetDefault(logger)
+
 	s := &server{
 		checkoutURL: envOr("CHECKOUT_URL", "http://localhost:8081"),
 		client:      &http.Client{Timeout: checkoutTimeout()},
@@ -17,7 +21,7 @@ func main() {
 	mux.HandleFunc("GET /buy", s.handleBuy)
 
 	addr := ":" + envOr("STOREFRONT_PORT", "8080")
-	log.Printf("storefront listening on %s (checkout at %s)", addr, s.checkoutURL)
+	slog.Info("storefront listening", "port", addr, "checkout_url", s.checkoutURL)
 	log.Fatal(http.ListenAndServe(addr, mux))
 }
 
