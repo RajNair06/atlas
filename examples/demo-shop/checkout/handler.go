@@ -7,7 +7,9 @@ import (
 )
 
 func handleCheckout(w http.ResponseWriter, r *http.Request) {
-	resp, err := http.Post(paymentURL()+"/pay", "application/json", nil)
+	client := &http.Client{Timeout: paymentTimeout()}
+
+	resp, err := client.Post(paymentURL()+"/pay", "application/json", nil)
 	if err != nil {
 		http.Error(w, fmt.Sprintf("payment unreachable: %v", err), http.StatusBadGateway)
 		return
