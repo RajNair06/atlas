@@ -14,7 +14,7 @@ type server struct {
 func (s *server) handleCheckout(w http.ResponseWriter, r *http.Request) {
 	resp, err := s.client.Post(s.paymentURL+"/pay", "application/json", nil)
 	if err != nil {
-		http.Error(w, fmt.Sprintf("payment unreachable: %v", err), http.StatusBadGateway)
+		http.Error(w, fmt.Sprintf("payment unreachable: %v", err), http.StatusInternalServerError)
 		return
 	}
 	defer resp.Body.Close()
