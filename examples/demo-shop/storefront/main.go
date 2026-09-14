@@ -8,16 +8,17 @@ import (
 )
 
 func main() {
+	s := &server{
+		checkoutURL: envOr("CHECKOUT_URL", "http://localhost:8081"),
+		client:      &http.Client{Timeout: checkoutTimeout()},
+	}
+
 	mux := http.NewServeMux()
-	mux.HandleFunc("GET /buy", handleBuy)
+	mux.HandleFunc("GET /buy", s.handleBuy)
 
 	addr := ":" + envOr("STOREFRONT_PORT", "8080")
-	log.Printf("storefront listening on %s (checkout at %s)", addr, checkoutURL())
+	log.Printf("storefront listening on %s (checkout at %s)", addr, s.checkoutURL)
 	log.Fatal(http.ListenAndServe(addr, mux))
-}
-
-func checkoutURL() string {
-	return envOr("CHECKOUT_URL", "http://localhost:8081")
 }
 
 func checkoutTimeout() time.Duration {

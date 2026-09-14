@@ -6,11 +6,15 @@ import (
 	"time"
 )
 
-func handleBuy(w http.ResponseWriter, r *http.Request) {
+type server struct {
+	checkoutURL string
+	client      *http.Client
+}
+
+func (s *server) handleBuy(w http.ResponseWriter, r *http.Request) {
 	start := time.Now()
 
-	client := &http.Client{Timeout: checkoutTimeout()}
-	resp, err := client.Post(checkoutURL()+"/checkout", "application/json", nil)
+	resp, err := s.client.Post(s.checkoutURL+"/checkout", "application/json", nil)
 	if err != nil {
 		http.Error(w, fmt.Sprintf("checkout unreachable: %v", err), http.StatusBadGateway)
 		return

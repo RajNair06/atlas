@@ -6,10 +6,13 @@ import (
 	"net/http"
 )
 
-func handleCheckout(w http.ResponseWriter, r *http.Request) {
-	client := &http.Client{Timeout: paymentTimeout()}
+type server struct {
+	paymentURL string
+	client     *http.Client
+}
 
-	resp, err := client.Post(paymentURL()+"/pay", "application/json", nil)
+func (s *server) handleCheckout(w http.ResponseWriter, r *http.Request) {
+	resp, err := s.client.Post(s.paymentURL+"/pay", "application/json", nil)
 	if err != nil {
 		http.Error(w, fmt.Sprintf("payment unreachable: %v", err), http.StatusBadGateway)
 		return

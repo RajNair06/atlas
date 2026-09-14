@@ -20,8 +20,8 @@ The whole project, broken into rungs. A **rung** = one concept + one small chang
 8. ✅ The no-timeout trap (slow downstream hangs upstream; goroutines pile up)
 9. ✅ Timeouts: what they fix, what they cost (fail-fast vs slow-but-successful)
 10. ✅ The three-service chain (storefront; latency stacks; failure propagates)
-11. ▶ Testing (httptest, fake downstreams, table-driven tests)
-12. Makefile (targets, `-include .env`, why make exists)
+11. ✅ Testing (httptest, fake downstreams, table-driven tests)
+12. ▶ Makefile (targets, `-include .env`, why make exists)
 13. CI (GitHub Actions YAML, green/red gates)
 14. Cascade-failure lab (delay storm, kill payment, timeout experiment — the I1 aha)
 

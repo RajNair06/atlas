@@ -8,16 +8,17 @@ import (
 )
 
 func main() {
+	s := &server{
+		paymentURL: envOr("PAYMENT_URL", "http://localhost:8082"),
+		client:     &http.Client{Timeout: paymentTimeout()},
+	}
+
 	mux := http.NewServeMux()
-	mux.HandleFunc("POST /checkout", handleCheckout)
+	mux.HandleFunc("POST /checkout", s.handleCheckout)
 
 	addr := ":" + envOr("CHECKOUT_PORT", "8081")
-	log.Printf("checkout listening on %s (payment at %s)", addr, paymentURL())
+	log.Printf("checkout listening on %s (payment at %s)", addr, s.paymentURL)
 	log.Fatal(http.ListenAndServe(addr, mux))
-}
-
-func paymentURL() string {
-	return envOr("PAYMENT_URL", "http://localhost:8082")
 }
 
 func paymentTimeout() time.Duration {
