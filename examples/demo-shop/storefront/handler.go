@@ -25,8 +25,11 @@ func generateRequestID() string {
 func (s *server) handleBuy(w http.ResponseWriter, r *http.Request) {
 	start := time.Now()
 
-	// Generate unique request ID at the edge
-	requestID := generateRequestID()
+	// Check for existing request ID from gateway, or generate new one
+	requestID := r.Header.Get("X-Request-ID")
+	if requestID == "" {
+		requestID = generateRequestID()
+	}
 
 	// Log with request ID
 	slog.Info("buy request started", "request_id", requestID)

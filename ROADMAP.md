@@ -2,208 +2,185 @@
 
 **Temporary scaffold — delete or rewrite when the project is complete.**
 
-The whole project, broken into rungs. A **rung** = one concept + one small change + one live demo. We never climb two rungs at once. Rungs below the current position are rough sketches; each gets refined into precise steps when we arrive.
+## Project Pivot (September 2026)
+
+We've pivoted from the 19-increment AI SRE platform to a focused 2-week project:
+
+**Self-Healing API Gateway with LLM-Powered Error Resolution**
+
+A lightweight reverse proxy that intercepts 4xx/5xx errors, feeds them to Gemini, and lets a human approve healing actions (retry, fallback, give up).
+
+**Why the pivot:**
+- Tighter scope = shippable in 2 weeks vs 5-6 months
+- Focuses on the most impressive features: reverse proxy, LLM tool-use, human-in-the-loop
+- Reuses I1/I2 foundations (structured logging, correlation IDs, demo-shop services)
+- Demonstrates real backend engineering + cloud deployment
+
+---
+
+## 2-Week Timeline
 
 **Legend:** ✅ done · ▶ current · (rest = planned)
 
----
+### Week 1: Gateway Core + LLM Integration
 
-## I1 — Naive systems & felt pain  ▶ (rebuilding from first principles)
+#### Day 1 — Reverse Proxy Foundation ✅
+- Parse `gateway.yaml` (YAML config with routes, timeouts, retries)
+- Build reverse proxy that routes requests to upstream services
+- Structured logging with correlation IDs (reuse I2 patterns)
+- `make gateway` target to run gateway + demo-shop together
+- **Demo:** `curl http://localhost:8080/buy` routes to storefront ✅
 
-1. ✅ What a server is (ports, listening, refused)
-2. ✅ HTTP is text (requests, responses, methods, status codes)
-3. ✅ First Go server (main, handlers, ListenAndServe, exit codes)
-4. ✅ The handler dissected (w/r, pointers, mux routing, 404/405)
-5. ✅ Packages & modules (folder=package, go.mod, import paths, visibility)
-6. ✅ Environment variables as config (port from env, `time.Sleep`, the `PAYMENT_DELAY` chaos knob)
-7. ✅ First client call — checkout is born (http.Client, calling another service)
-8. ✅ The no-timeout trap (slow downstream hangs upstream; goroutines pile up)
-9. ✅ Timeouts: what they fix, what they cost (fail-fast vs slow-but-successful)
-10. ✅ The three-service chain (storefront; latency stacks; failure propagates)
-11. ✅ Testing (httptest, fake downstreams, table-driven tests)
-12. ✅ Makefile (targets, `-include .env`, why make exists)
-13. ✅ CI (GitHub Actions YAML, green/red gates)
-14. ✅ Cascade-failure lab (delay storm, kill payment, timeout experiment — the I1 aha)
+#### Day 2 — Demo-Shop Integration ▶
+- Shift demo-shop ports (storefront 8081, checkout 8082, payment 8083)
+- Gateway config routes `/buy` → storefront, `/checkout` → checkout, `/pay` → payment
+- Verify all three routes work
+- **Demo:** Full chain through gateway (gateway → storefront → checkout → payment)
 
----
+#### Day 3 — Error Interception
+- Wrapper around reverse proxy that captures responses
+- On 4xx/5xx, capture full context: request, response, upstream, timing, correlation ID
+- Store failed requests in-memory map (key = request ID)
+- Structured log entry for each failure
+- **Demo:** Kill payment, see detailed failure log with all context
 
-## I2 — Observability ▶
+#### Day 4 — Gemini Integration
+- Gemini API client (HTTP calls to generativelanguage.googleapis.com)
+- Structured prompt template with request/error context
+- Parse Gemini's JSON response (action + reasoning)
+- Circuit breaker: if Gemini fails/times out, default to `give_up`
+- **Demo:** Failed request triggers Gemini call, logs show structured suggestion
 
-1. ✅ Structured logging (why printf-logs die at scale; slog; key=value)
-2. ✅ Logs are not enough (grep three services for one request — feel the pain)
-3. ✅ Correlation IDs (a request ID that rides along in a header)
-4. ▶ Traces: spans, parents, trees (the shape of one request)
-5. Context as the carrier (`context.Context`, why every Go function takes it first)
-6. OTel SDK by hand (create spans manually, see them work)
-7. otelhttp middleware (automatic spans, the `traceparent` header on the wire)
-8. Jaeger (read your first span tree in a UI)
-9. RED metrics (counters, histograms, rate/errors/duration)
-10. The OTel Collector (why a middleman; receivers → processors → exporters)
-11. Goroutine trap lab (lose a trace across a goroutine, fix it)
-12. Bug-hunt lab (logs-only vs traces: time both — the "20 min → 40 sec" artifact)
+#### Day 5 — Healing Actions
+- Implement three actions: `retry`, `fallback`, `give_up`
+  - `retry`: exponential backoff (100ms, 200ms, 400ms)
+  - `fallback`: call fallback endpoint from config
+  - `give_up`: return original error
+- Circuit breaker per upstream (10 consecutive failures → trip for 30s)
+- Latency budget: max 5s total healing time per request
+- **Demo:** Kill payment, gateway retries 3x, eventually gives up after 5s
 
-## I3 — Alert fatigue
+#### Day 6 — Human-in-the-loop UI
+- HTML page showing pending healing decisions (Go templates)
+- Each card shows: request context, Gemini suggestion, [Approve] [Reject] buttons
+- SSE endpoint for live updates when new decisions arrive
+- htmx for button interactions (no React/Vue)
+- When approved: execute action, update UI with result
+- When rejected: return original error to client
+- **Demo:** Kill payment, `curl /buy` hangs (waiting for approval), UI shows pending decision, click Approve, gateway retries, curl completes
 
-1. Prometheus: pull-based metrics + PromQL basics
-2. Alert rules: "page me when X"
-3. Alertmanager: grouping, silences, what a page actually is
-4. Loki (logs at scale) + Tempo (traces at scale, replaces Jaeger)
-5. Grafana dashboards
-6. Deliberately naive alerting (one alert per symptom, no grouping)
-7. Storm lab: run chaos, count the pages, sit with the number
-8. The BYO observability seam (every endpoint is just config)
-
-## I4 — Alert gateway (first product service)
-
-1. Alerts vs incidents (why 300 alerts ≠ 300 incidents)
-2. Alertmanager webhooks (receive alerts over HTTP)
-3. Idempotency & fingerprints (the same alert twice = one incident)
-4. Redis (in-memory state; grouping windows)
-5. PostgreSQL + migrations (durable state)
-6. Grouping logic (storm → incidents)
-7. Replay lab: 300 alerts → N incidents, tune the window
-
-## I5 — Queues (no alert ever lost)
-
-1. Pain first: kill the gateway mid-storm, count lost alerts
-2. What a queue is and why HTTP push isn't enough
-3. NATS JetStream basics
-4. The queue interface (adapter #1: nats ↔ sqs)
-5. Retries, backoff, dead-letter queues
-6. Idempotent consumers
-7. The delivery ledger ("where's my alert?")
-8. Audit lab: 1,000 in, 1,000 out, 0 lost, 0 duplicated
-
-## I6 — Incident service + first UI
-
-1. The incident state machine (firing → acked → investigating → resolved)
-2. Durable state survives crashes
-3. SSE (server-sent events: pushing updates to a browser)
-4. Go templates + htmx (HTML from the server, no build step)
-5. Live incident feed
-6. Crash/race labs; SSE reconnection
-7. Fresh-clone checkpoint #1 (`make demo` on a virgin machine)
-
-## I7 — Identity & auth
-
-1. Pain first: curl in a fake alert, resolve a real incident
-2. HMAC-signed webhooks (reject forgeries)
-3. JWTs (tokens, claims, expiry)
-4. Roles: viewer / on-call / admin, enforced on API and SSE
-5. Login form, httpOnly + SameSite cookies
-6. Audit log (every mutation, with identity)
-7. Attack lab: forge, escalate, replay, brute-force — all rejected, all logged
-
-## I8 — gRPC (measure, don't believe)
-
-1. Protobuf: contracts as code (proto/ + buf lint)
-2. gRPC server + client from the same .proto
-3. Streaming
-4. Breaking-change detection in CI
-5. Benchmark REST vs gRPC with k6 — p50/p99/payload honestly measured
-6. Adopt gRPC internally, keep REST externally
-
-## I9 — Load, limits, ops page
-
-1. k6: ramp traffic until death
-2. Find exactly one bottleneck, fix it, re-measure
-3. Rate limiting + timeouts at the gateway
-4. Live ops page (ingest rate, queue depth, p99)
-5. Publish the load report; fresh-clone checkpoint #2
-
-## I10 — AWS as code
-
-1. Terraform basics: providers, resources, plan/apply, state
-2. VPC module from scratch
-3. RDS, ElastiCache, SQS as modules
-4. Least-privilege IAM (walk one role back from over-privileged)
-5. Remote state + locking
-6. Plan gate in CI + budget alarms
-7. Drift lab; destroy-everything-and-rebuild-from-zero lab
-
-## I11 — Kubernetes deployment
-
-1. Docker images for our services (Dockerfile from first principles)
-2. K8s nouns: pods, deployments, services, ingresses
-3. EKS + spot nodes; ECR; images on GHCR
-4. Helm chart per service (the user install path)
-5. CI pipeline: build → push → plan gate → deploy on merge
-6. Canary + error-rate gate + automatic rollback
-7. Lab: merge a broken build on purpose, watch it roll back
-
-## I12 — SLOs & runbooks
-
-1. What an SLO is; error budgets
-2. Recording rules + multi-window burn-rate alerts
-3. Error-budget dashboard
-4. Three real runbooks
-5. Violate your own SLO; follow your own runbook at 11 PM; fix the runbook
-6. Friend test (README-only deploy); real postmortem in the repo
-
-## I13 — Can an LLM read my cluster?
-
-1. What an LLM API call actually is (raw, no frameworks, Python)
-2. Ollama: local-first, zero keys, zero spend
-3. Hallucination lab: ask with no evidence
-4. Query Prometheus/Loki, paste results into the prompt, ask again — feel grounding
-5. The provider adapter (openai/anthropic/bedrock/ollama behind one interface)
-6. Incident detail page: timeline, RCA draft, evidence links
-7. Compare 2–3 models on one incident
-
-## I14 — Give it hands (tools)
-
-1. Tool calling: what the loop actually is (LLM asks → we run → we answer)
-2. Typed tools: query_promql, search_logs, get_recent_deploys, get_service_topology
-3. Investigator service consuming incidents from the queue
-4. Store & render the full tool-call trace (the debugging surface)
-5. Config-gated tools (users disable what they don't want)
-6. Rabbit-hole lab: watch five investigations, tune prompts
-
-## I15 — MCP + guardrails
-
-1. What MCP is (tools as a standard protocol)
-2. Expose our toolset as an MCP server
-3. Policy layer: per-tool allowlists, rate caps, read-only by default
-4. Audit with caller identity
-5. Lab: connect your own MCP client, try to talk it into something unauthorized, watch policy reject it — in the audit log
-
-## I16 — Remediation with human approval
-
-1. Remediation tools: restart_pod, rollback_deployment (dry-run by default)
-2. The approval gate: propose → approve/reject card → RBAC → scoped ServiceAccount → verify → auto-resolve
-3. Approvals restricted to on-call/admin; UI hides what API denies (defense in depth)
-4. Timeline records the approver's identity
-5. Labs: approve a wrong fix in a sandbox, study blast radius; approve as viewer, get denied twice
-
-## I17 — Evals (prove it with numbers)
-
-1. Codify 15–20 reproducible chaos scenarios (the fixture format)
-2. Eval harness: score cause/evidence/fix correctness + tokens/cost/time
-3. Results table page (one table, zero chart libraries)
-4. Matrix runs: models × prompts × tools → leaderboard
-5. copilot-eval as a standalone tool; fixture docs = first good-first-issues
-6. Fresh-clone checkpoint #3
-
-## I18 — The full loop, unattended
-
-1. Chaos-as-CI: push → deploy → inject → detect → diagnose → auto-approve (demo only) → remediate → verify → report on the PR
-2. Run it 10×; measure consistency; chase the flake
-3. Publish the loop's reliability stats
-
-## I19 — Ship
-
-1. v0.1.0: CHANGELOG + semver discipline
-2. Docs site + quickstart + BYO guides (your cluster / LLM / IdP / AWS)
-3. 2-minute demo video; architecture diagrams
-4. Stranger test: someone installs BYO mode unassisted; fix every stumble
-5. Public launch — the one screenshot: Alert → RCA → Approve → Resolved
+#### Day 7 — Testing + Refinement
+- End-to-end tests for each action type
+- Edge cases: Gemini timeout, circuit breaker trip, human rejection
+- Clean up logging, add request/response body capture (small bodies only)
+- **Demo:** Generate various failure scenarios, verify all paths work
 
 ---
 
-## Standing rules (see LEARNING.md)
+### Week 2: Observability + Deployment + Polish
 
-- One rung at a time; every line of code explained; every command explained before it runs
-- Each rung ends with a live demo you can re-run yourself
-- Commit per rung (plain sentence), push at session end
-- Side quests capped at one day; every detour gets a one-paragraph write-up in chat
-- The plan's increments (I1–I19) and their order come from the master plan; rungs inside each are refined as we arrive
+#### Day 8 — Prometheus Metrics
+- `/metrics` endpoint exposing:
+  - `gateway_requests_total{path, status}`
+  - `gateway_errors_total{path, status}`
+  - `gateway_healing_attempts_total{action, result}`
+  - `gateway_healing_duration_seconds` (histogram)
+  - `gateway_llm_calls_total{result}`
+  - `gateway_llm_cost_dollars` (estimated from tokens)
+- Structured logs for every decision (suggested, approved, result)
+- **Demo:** Generate traffic, see metrics in `/metrics`
+
+#### Day 9 — Containerization
+- Multi-stage Dockerfile (builder + minimal runtime)
+- `docker-compose.yml` with gateway + demo-shop services
+- Environment variable config (`GEMINI_API_KEY`, upstream URLs)
+- Health check endpoint (`/health`)
+- **Demo:** `docker-compose up`, everything runs in containers
+
+#### Day 10 — Cloud Deployment
+- Deploy to Railway or Fly.io (one-command deploy)
+- Configure env vars in dashboard
+- Verify gateway accessible from internet
+- **Demo:** `curl https://your-gateway.railway.app/buy` works from anywhere
+
+#### Day 11 — README + Documentation
+- Architecture diagram (ASCII art)
+- Quickstart: `git clone && cp gateway.yaml.example gateway.yaml && make demo`
+- How healing works (flow diagram)
+- Configuration reference (every field explained)
+- Deployment guide (local + cloud)
+- **Demo:** Follow quickstart on clean machine, works end-to-end
+
+#### Day 12 — Demo Video/GIF
+- Record full loop:
+  1. Request fails (kill payment)
+  2. Gemini suggests retry
+  3. UI shows pending decision
+  4. Human approves
+  5. Gateway retries 2x
+  6. Payment comes back, request succeeds
+  7. Client gets success response
+- Embed in README
+- **Demo:** Watch video, understand the full loop in 2 minutes
+
+#### Day 13 — Edge Cases + Polish
+- Request body capture (JSON only, < 1KB)
+- Response body capture in error cases
+- Better error messages when config is invalid
+- Graceful shutdown (finish in-flight healing before exit)
+- **Demo:** Test malformed config, see helpful errors
+
+#### Day 14 — Final Testing + Ship
+- End-to-end test suite (happy path, retry success, retry failure, fallback, circuit breaker)
+- Verify fresh-clone rule: clone, `make demo`, works
+- Tag v0.1.0
+- Write blog post / Twitter thread
+- **Demo:** Public launch, shareable link, 2-minute video
+
+---
+
+## Completed Foundation Work
+
+The following work from the original I1/I2 plan is **kept and reused**:
+
+### I1 — Naive Systems & Felt Pain ✅
+All 14 rungs complete. Provides:
+- Demo-shop services (storefront, checkout, payment) as upstream services
+- Understanding of cascading failures, timeouts, testing
+- Makefile, CI, cascade-failure lab
+
+### I2 — Observability (Partial) ✅
+Rungs 1-3 complete. Provides:
+- Structured logging with slog JSON
+- Correlation IDs that ride in headers
+- Foundation for gateway observability
+
+---
+
+## Technical Decisions
+
+**Gateway architecture:**
+- Reverse proxy pattern (client → gateway → upstream)
+- Human-in-the-loop for all healing actions
+- Containerized deployment (Railway/Fly.io)
+- Gemini API for LLM decisions
+- Exact route matching + basic prefix stripping
+- Config reload requires restart (no hot reload)
+
+**What we're NOT building:**
+- Advanced LLM actions (param correction, body rewriting)
+- Production hardening (rate limiting, auth, TLS termination)
+- Persistent storage (everything in-memory)
+- Sophisticated UI (functional HTML+htmx, not SPA)
+- Multi-tenant (single config, not per-tenant rules)
+- Auto-apply mode (all healing requires approval)
+
+---
+
+## Standing Rules (see LEARNING.md)
+
+- One day at a time; every line of code explained; every command explained before it runs
+- Each day ends with a live demo you can re-run yourself
+- Commit per day (plain sentence), push at session end
+- Side quests capped at 2 hours; every detour gets a one-paragraph write-up
+- The 14-day timeline is the contract; daily deliverables are refined as we arrive

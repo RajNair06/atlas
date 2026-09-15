@@ -1,0 +1,56 @@
+# Self-Healing API Gateway Configuration
+#
+# This file defines how the gateway routes requests to upstream services.
+# Copy this to gateway.yaml and customize for your services.
+#
+# Usage:
+#   cp gateway.yaml.example gateway.yaml
+#   make gateway
+
+server:
+  port: 8080  # Gateway listens on this port
+
+llm:
+  provider: gemini                    # Only gemini supported for now
+  model: gemini-1.5-pro               # Model to use for healing decisions
+  api_key: ${GEMINI_API_KEY}          # From environment variable
+  timeout: 2s                         # Max time to wait for LLM response
+  max_healing_attempts: 3             # Max retries per request before giving up
+
+# Route definitions
+# Each route maps an incoming path to an upstream service
+routes:
+  # Demo shop routes (these are the upstream services we built in I1/I2)
+  - path: /buy
+    upstream: http://localhost:8081     # Storefront service
+    fallback: ""                         # Optional fallback URL (empty = no fallback)
+    timeout: 10s                         # Max time to wait for upstream
+    retries: 3                           # Max automatic retries before LLM healing
+    strip_prefix: false                  # /buy → /buy at upstream (no change)
+    skip_healing: false                  # Enable LLM healing for this route
+
+  - path: /checkout
+    upstream: http://localhost:8082     # Checkout service
+    fallback: ""
+    timeout: 5s
+    retries: 3
+    strip_prefix: false
+    skip_healing: false
+
+  - path: /pay
+    upstream: http://localhost:8083     # Payment service
+    fallback: ""
+    timeout: 3s
+    retries: 3
+    strip_prefix: false
+    skip_healing: false
+
+  # Example: route with prefix stripping
+  # - path: /api/users
+  #   upstream: http://localhost:8090
+  #   strip_prefix: true                # /api/users/123 → /123 at upstream
+
+  # Example: skip healing for health checks
+  # - path: /health
+  #   upstream: http://localhost:8091
+  #   skip_healing: true                # Don't waste LLM calls on health checks
