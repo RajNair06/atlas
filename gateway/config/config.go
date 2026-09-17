@@ -37,7 +37,6 @@ type RouteConfig struct {
 	Fallback    string        `yaml:"fallback"`
 	Timeout     time.Duration `yaml:"timeout"`
 	Retries     int           `yaml:"retries"`
-	StripPrefix bool          `yaml:"strip_prefix"`
 	SkipHealing bool          `yaml:"skip_healing"`
 }
 

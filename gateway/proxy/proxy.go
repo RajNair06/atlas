@@ -41,12 +41,6 @@ func (g *Gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	// Forward the request to upstream
 	upstreamURL := route.Upstream + r.URL.Path
-	
-	// If strip_prefix is enabled, remove the matched path prefix
-	if route.StripPrefix {
-		// For now, we only support exact matches, so stripping means forwarding to root
-		upstreamURL = route.Upstream
-	}
 
 	// Create the upstream request
 	upstreamReq, err := http.NewRequestWithContext(r.Context(), r.Method, upstreamURL, r.Body)
@@ -113,7 +107,7 @@ func (g *Gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 }
 
 // findRoute looks up the route for a given path
-// Currently only supports exact matches
+// Uses exact matching only
 func (g *Gateway) findRoute(path string) (*config.RouteConfig, bool) {
 	for i := range g.config.Routes {
 		if g.config.Routes[i].Path == path {

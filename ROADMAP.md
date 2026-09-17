@@ -29,6 +29,7 @@ A lightweight reverse proxy that intercepts 4xx/5xx errors, feeds them to Gemini
 - Build reverse proxy that routes requests to upstream services
 - Structured logging with correlation IDs (reuse I2 patterns)
 - `make gateway` target to run gateway + demo-shop together
+- **Simplified design**: Exact path matching only, request path appended as-is to upstream URL
 - **Demo:** `curl http://localhost:8080/buy` routes to storefront ✅
 
 #### Day 2 — Demo-Shop Integration ▶

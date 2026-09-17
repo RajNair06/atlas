@@ -18,7 +18,14 @@ llm:
   max_healing_attempts: 3             # Max retries per request before giving up
 
 # Route definitions
-# Each route maps an incoming path to an upstream service
+# Each route maps an incoming path to an upstream service.
+# The request path is appended to the upstream URL as-is.
+#
+# Example:
+#   path: /users
+#   upstream: http://user-service:8081
+#   GET /users/123 → http://user-service:8081/users/123
+#
 routes:
   # Demo shop routes (these are the upstream services we built in I1/I2)
   - path: /buy
@@ -26,7 +33,6 @@ routes:
     fallback: ""                         # Optional fallback URL (empty = no fallback)
     timeout: 10s                         # Max time to wait for upstream
     retries: 3                           # Max automatic retries before LLM healing
-    strip_prefix: false                  # /buy → /buy at upstream (no change)
     skip_healing: false                  # Enable LLM healing for this route
 
   - path: /checkout
@@ -34,7 +40,6 @@ routes:
     fallback: ""
     timeout: 5s
     retries: 3
-    strip_prefix: false
     skip_healing: false
 
   - path: /pay
@@ -42,15 +47,11 @@ routes:
     fallback: ""
     timeout: 3s
     retries: 3
-    strip_prefix: false
     skip_healing: false
-
-  # Example: route with prefix stripping
-  # - path: /api/users
-  #   upstream: http://localhost:8090
-  #   strip_prefix: true                # /api/users/123 → /123 at upstream
 
   # Example: skip healing for health checks
   # - path: /health
   #   upstream: http://localhost:8091
+  #   timeout: 2s
+  #   retries: 0
   #   skip_healing: true                # Don't waste LLM calls on health checks
