@@ -32,13 +32,14 @@ A lightweight reverse proxy that intercepts 4xx/5xx errors, feeds them to Gemini
 - **Simplified design**: Exact path matching only, request path appended as-is to upstream URL
 - **Demo:** `curl http://localhost:8080/buy` routes to storefront ✅
 
-#### Day 2 — Demo-Shop Integration ▶
+#### Day 2 — Demo-Shop Integration ✅
 - Shift demo-shop ports (storefront 8081, checkout 8082, payment 8083)
 - Gateway config routes `/buy` → storefront, `/checkout` → checkout, `/pay` → payment
 - Verify all three routes work
 - **Demo:** Full chain through gateway (gateway → storefront → checkout → payment)
+- Integration test script added (`test-integration.sh`)
 
-#### Day 3 — Error Interception
+#### Day 3 — Error Interception ▶
 - Wrapper around reverse proxy that captures responses
 - On 4xx/5xx, capture full context: request, response, upstream, timing, correlation ID
 - Store failed requests in-memory map (key = request ID)
