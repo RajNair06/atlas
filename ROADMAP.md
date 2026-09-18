@@ -39,19 +39,20 @@ A lightweight reverse proxy that intercepts 4xx/5xx errors, feeds them to Gemini
 - **Demo:** Full chain through gateway (gateway → storefront → checkout → payment)
 - Integration test script added (`test-integration.sh`)
 
-#### Day 3 — Error Interception ▶
+#### Day 3 — Error Interception ✅
 - Wrapper around reverse proxy that captures responses
 - On 4xx/5xx, capture full context: request, response, upstream, timing, correlation ID
 - Store failed requests in-memory map (key = request ID)
 - Structured log entry for each failure
-- **Demo:** Kill payment, see detailed failure log with all context
+- **Demo:** Kill payment, see detailed failure log with all context ✅
 
-#### Day 4 — Gemini Integration
-- Gemini API client (HTTP calls to generativelanguage.googleapis.com)
-- Structured prompt template with request/error context
-- Parse Gemini's JSON response (action + reasoning)
-- Circuit breaker: if Gemini fails/times out, default to `give_up`
-- **Demo:** Failed request triggers Gemini call, logs show structured suggestion
+#### Day 4 — Gemini Integration ✅
+- Gemini API client with HTTP calls to generativelanguage.googleapis.com
+- Structured prompt template with full error context (method, path, status, headers, body)
+- Response parsing and validation (action: retry/fallback/give_up)
+- Healing endpoint at `/healing/{request_id}` for on-demand analysis
+- Using model: `gemini-3.5-flash-lite`
+- **Demo:** Kill payment, trigger error, call healing endpoint, get Gemini's structured suggestion ✅
 
 #### Day 5 — Healing Actions
 - Implement three actions: `retry`, `fallback`, `give_up`

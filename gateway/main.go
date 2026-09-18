@@ -14,6 +14,8 @@ import (
 	"time"
 
 	"github.com/RajNair06/atlas/gateway/config"
+	"github.com/RajNair06/atlas/gateway/healing"
+	"github.com/RajNair06/atlas/gateway/llm"
 	"github.com/RajNair06/atlas/gateway/proxy"
 )
 
@@ -43,11 +45,29 @@ func main() {
 		"llm_model", cfg.LLM.Model,
 	)
 
-	// Create gateway
-	gw := proxy.New(cfg)
+	// Create Gemini client
+	geminiClient := llm.NewGeminiClient(
+		cfg.LLM.APIKey,
+		cfg.LLM.Model,
+		cfg.LLM.Timeout,
+	)
 
-	// Wrap gateway with correlation ID middleware
-	handler := withCorrelationID(gw)
+	// Create decision engine
+	decisionEngine := healing.NewDecisionEngine(geminiClient)
+
+	// Create gateway with decision engine
+	gw := proxy.New(cfg, decisionEngine)
+
+	// Create healing handler
+	healingHandler := healing.NewHealingHandler(gw.GetErrorStore(), decisionEngine)
+
+	// Set up routing
+	mux := http.NewServeMux()
+	mux.Handle("/healing/", healingHandler)
+	mux.Handle("/", gw)
+
+	// Wrap with correlation ID middleware
+	handler := withCorrelationID(mux)
 
 	// Create HTTP server
 	server := &http.Server{
