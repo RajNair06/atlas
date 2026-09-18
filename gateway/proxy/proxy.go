@@ -133,6 +133,7 @@ func (g *Gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			Method:          r.Method,
 			Path:            r.URL.Path,
 			Upstream:        upstreamURL,
+			Fallback:        route.Fallback,
 			StatusCode:      resp.StatusCode,
 			ErrorBody:       string(responseBody),
 			RequestHeaders:  r.Header,

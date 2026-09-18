@@ -11,6 +11,7 @@ type FailedRequest struct {
 	Method        string            `json:"method"`
 	Path          string            `json:"path"`
 	Upstream      string            `json:"upstream"`
+	Fallback      string            `json:"fallback"`
 	StatusCode    int               `json:"status_code"`
 	ErrorBody     string            `json:"error_body,omitempty"`
 	RequestHeaders map[string][]string `json:"request_headers"`

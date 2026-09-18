@@ -65,6 +65,7 @@ Failed Request Context:
 - Method: %s
 - Path: %s
 - Upstream: %s
+- Configured Fallback: %s
 - Status Code: %d
 - Error Body: %s
 - Duration: %dms
@@ -73,7 +74,7 @@ Failed Request Context:
 
 Available Actions:
 1. retry - Retry the same request (for transient failures like timeouts, 503, 504, connection errors)
-2. fallback - Call a fallback endpoint (for permanent failures, specify fallback_path)
+2. fallback - Call the configured fallback endpoint (for permanent failures, use the fallback URL shown above)
 3. give_up - Give up and return error to client (for client errors like 400, 401, 404, or when retry won't help)
 
 Return ONLY a JSON object with this exact structure:
@@ -85,7 +86,7 @@ Return ONLY a JSON object with this exact structure:
 
 Example responses:
 {"action":"retry","reasoning":"503 Service Unavailable is often transient, retry may succeed"}
-{"action":"fallback","reasoning":"Payment service is down, use backup payment endpoint","fallback_path":"/backup/pay"}
+{"action":"fallback","reasoning":"Payment service is down, use configured backup payment endpoint","fallback_path":"/backup/pay"}
 {"action":"give_up","reasoning":"404 Not Found indicates the resource doesn't exist, retry won't help"}
 
 Your response:`,
@@ -93,6 +94,7 @@ Your response:`,
 		failedReq.Method,
 		failedReq.Path,
 		failedReq.Upstream,
+		failedReq.Fallback,
 		failedReq.StatusCode,
 		failedReq.ErrorBody,
 		failedReq.DurationMs,
