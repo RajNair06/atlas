@@ -13,6 +13,7 @@
 *.out
 /bin/
 /dist/
+/logs/
 
 # Python
 __pycache__/
