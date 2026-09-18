@@ -53,6 +53,7 @@ A lightweight reverse proxy that intercepts 4xx/5xx errors, feeds them to Gemini
 - Healing endpoint at `/healing/{request_id}` for on-demand analysis
 - Using model: `gemini-3.5-flash-lite`
 - **Demo:** Kill payment, trigger error, call healing endpoint, get Gemini's structured suggestion ✅
+- Added demo scripts (start-demo.sh, stop-demo.sh, demo-healing.sh) for easy testing
 
 #### Day 5 — Healing Actions
 - Implement three actions: `retry`, `fallback`, `give_up`
