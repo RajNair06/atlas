@@ -73,9 +73,9 @@ Failed Request Context:
 - Response Headers: %v
 
 Available Actions:
-1. retry - Retry the same request (for transient failures like timeouts, 503, 504, connection errors)
-2. fallback - Call the configured fallback endpoint (for permanent failures, use the fallback URL shown above)
-3. give_up - Give up and return error to client (for client errors like 400, 401, 404, or when retry won't help)
+1. retry - Retry the same request. Use for transient failures: timeouts, 502, 503, 504, "connection refused", "unreachable". In microservices these usually mean a service is restarting, deploying, or briefly overloaded — a retry often succeeds even when no fallback exists.
+2. fallback - Call the configured fallback endpoint. ONLY choose this when the failure looks permanent AND the "Configured Fallback" field above is non-empty.
+3. give_up - Give up and return the error to the client. Use for client errors (400, 401, 403, 404) where retrying cannot possibly help, or for explicit business-logic rejections.
 
 Return ONLY a JSON object with this exact structure:
 {
@@ -85,8 +85,9 @@ Return ONLY a JSON object with this exact structure:
 }
 
 Example responses:
+{"action":"retry","reasoning":"connection refused is usually transient — the upstream may be restarting, retry may succeed"}
 {"action":"retry","reasoning":"503 Service Unavailable is often transient, retry may succeed"}
-{"action":"fallback","reasoning":"Payment service is down, use configured backup payment endpoint","fallback_path":"/backup/pay"}
+{"action":"fallback","reasoning":"Payment service is down and a fallback endpoint is configured","fallback_path":"/backup/pay"}
 {"action":"give_up","reasoning":"404 Not Found indicates the resource doesn't exist, retry won't help"}
 
 Your response:`,

@@ -9,6 +9,7 @@
 
 server:
   port: 8080  # Gateway listens on this port
+  auto_heal: true  # Automatically execute Gemini's healing suggestions (synchronously)
 
 llm:
   provider: gemini                    # Only gemini supported for now

@@ -5,6 +5,8 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/RajNair06/atlas/gateway/config"
@@ -18,6 +20,7 @@ type Gateway struct {
 	client         *http.Client
 	errorStore     *errors.Store
 	decisionEngine *healing.DecisionEngine
+	executor       *healing.Executor
 }
 
 // New creates a new Gateway with the given config
@@ -33,6 +36,13 @@ func New(cfg *config.Config, decisionEngine *healing.DecisionEngine) *Gateway {
 // GetErrorStore returns the error store for external access
 func (g *Gateway) GetErrorStore() *errors.Store {
 	return g.errorStore
+}
+
+// SetExecutor wires the healing executor after construction.
+// Two-phase wiring is required because the executor replays requests
+// through this gateway: gateway needs executor, executor needs gateway.
+func (g *Gateway) SetExecutor(executor *healing.Executor) {
+	g.executor = executor
 }
 
 // ServeHTTP handles incoming HTTP requests
@@ -155,6 +165,39 @@ func (g *Gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			"error_body", string(responseBody),
 			"duration_ms", time.Since(start).Milliseconds(),
 		)
+
+		// Synchronous healing: analyze with Gemini and execute the suggestion
+		// before responding. The client waits and receives either the healed
+		// response or the original error — nothing is written until we decide.
+		if g.executor != nil && g.config.Server.AutoHeal {
+			result, healErr := g.executor.ExecuteHealing(failedReq)
+			if healErr != nil {
+				slog.Warn("healing failed, returning original error",
+					"request_id", requestID,
+					"error", healErr,
+					"duration_ms", time.Since(start).Milliseconds(),
+				)
+			} else {
+				slog.Info("request healed",
+					"request_id", requestID,
+					"action", result.Action,
+					"attempts", result.Attempts,
+					"status", result.StatusCode,
+					"duration_ms", time.Since(start).Milliseconds(),
+				)
+				for key, values := range result.Header {
+					for _, value := range values {
+						w.Header().Add(key, value)
+					}
+				}
+				w.Header().Set("X-Healed", "true")
+				w.Header().Set("X-Healing-Action", string(result.Action))
+				w.Header().Set("X-Healing-Attempts", strconv.Itoa(result.Attempts))
+				w.WriteHeader(result.StatusCode)
+				_, _ = w.Write(result.Body)
+				return
+			}
+		}
 	}
 
 	// Copy response headers
@@ -187,4 +230,40 @@ func (g *Gateway) findRoute(path string) (*config.RouteConfig, bool) {
 		}
 	}
 	return nil, false
+}
+
+// ReplayRequest re-sends a captured failed request directly to its upstream.
+// This makes *Gateway satisfy healing.RequestReplayer. The caller owns the
+// response and must read and close resp.Body.
+func (g *Gateway) ReplayRequest(failedReq *errors.FailedRequest) (*http.Response, error) {
+	var body io.Reader
+	if failedReq.RequestBody != "" {
+		body = strings.NewReader(failedReq.RequestBody)
+	}
+
+	req, err := http.NewRequest(failedReq.Method, failedReq.Upstream, body)
+	if err != nil {
+		return nil, err
+	}
+
+	for key, values := range failedReq.RequestHeaders {
+		for _, value := range values {
+			req.Header.Add(key, value)
+		}
+	}
+
+	timeout := 5 * time.Second
+	if route, ok := g.findRoute(failedReq.Path); ok {
+		timeout = route.Timeout
+	}
+
+	client := &http.Client{Timeout: timeout}
+
+	slog.Info("replaying request",
+		"request_id", failedReq.RequestID,
+		"method", failedReq.Method,
+		"upstream", failedReq.Upstream,
+	)
+
+	return client.Do(req)
 }

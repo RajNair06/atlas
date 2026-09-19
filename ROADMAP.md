@@ -55,14 +55,16 @@ A lightweight reverse proxy that intercepts 4xx/5xx errors, feeds them to Gemini
 - **Demo:** Kill payment, trigger error, call healing endpoint, get Gemini's structured suggestion ✅
 - Added demo scripts (start-demo.sh, stop-demo.sh, demo-healing.sh) for easy testing
 
-#### Day 5 — Healing Actions
-- Implement three actions: `retry`, `fallback`, `give_up`
-  - `retry`: exponential backoff (100ms, 200ms, 400ms)
-  - `fallback`: call fallback endpoint from config
-  - `give_up`: return original error
-- Circuit breaker per upstream (10 consecutive failures → trip for 30s)
-- Latency budget: max 5s total healing time per request
-- **Demo:** Kill payment, gateway retries 3x, eventually gives up after 5s
+#### Day 5 — Healing Actions ▶ (Part 1 done)
+- ✅ Healing executor (`gateway/healing/executor.go`) with `RequestReplayer` interface (breaks the proxy↔healing import cycle)
+- ✅ Retry with exponential backoff (100ms → 200ms → 400ms, max attempts from config)
+- ✅ Synchronous auto-heal in the proxy: capture → Gemini → execute → healed response or original error (`auto_heal` config flag)
+- ✅ `X-Healed` / `X-Healing-Action` / `X-Healing-Attempts` response headers
+- ✅ Prompt tuned: connection-refused classified transient; fallback only when configured
+- ✅ 5 executor unit tests (fake replayer) + live demos: give_up path, all-retries-fail path, heal-on-recovery path (200 + X-Healed: true)
+- ⬜ Part 2: execute fallback action (replay against route fallback URL)
+- ⬜ Part 2: circuit breaker per upstream (N consecutive failures → trip → fast-fail window)
+- ⬜ Part 2: latency budget (cap total healing time per request)
 
 #### Day 6 — Human-in-the-loop UI
 - HTML page showing pending healing decisions (Go templates)

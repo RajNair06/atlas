@@ -58,6 +58,12 @@ func main() {
 	// Create gateway with decision engine
 	gw := proxy.New(cfg, decisionEngine)
 
+	// Create healing executor and wire it back into the gateway.
+	// The executor replays failed requests through the gateway itself,
+	// so it can only be constructed after the gateway exists.
+	executor := healing.NewExecutor(decisionEngine, gw, cfg.LLM.MaxHealingAttempts)
+	gw.SetExecutor(executor)
+
 	// Create healing handler
 	healingHandler := healing.NewHealingHandler(gw.GetErrorStore(), decisionEngine)
 

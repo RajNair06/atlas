@@ -18,7 +18,8 @@ type Config struct {
 
 // ServerConfig holds gateway server settings
 type ServerConfig struct {
-	Port int `yaml:"port"`
+	Port     int  `yaml:"port"`
+	AutoHeal bool `yaml:"auto_heal"`
 }
 
 // LLMConfig holds LLM provider settings
