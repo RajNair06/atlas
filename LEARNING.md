@@ -40,6 +40,7 @@ See `ROADMAP.md` for the day-by-day plan of the current project.
 - Days 1–4 — complete: reverse proxy, demo-shop integration, error interception, Gemini analysis
 - Day 5 — complete: healing executor, synchronous auto-retry with exponential backoff, fallback chain, per-upstream circuit breaker, latency budget
 - Day 6 — complete: human-in-the-loop approval gate (require_approval), approval store with history, SSE healing console at /ui, demo-approval.sh
-- Day 7 — next: end-to-end tests for each action type, edge cases (Gemini timeout, breaker trip, human rejection), logging cleanup
+- Day 7 — complete: 114 tests (65 → 114) covering the Gemini client (httptest fakes, key redaction, timeouts), full-stack proxy E2E (every action type, approval gate, breaker, body integrity), config validation matrix, error-store concurrency; 4 KiB capture cap on stored bodies; CI hardened (vet + `-race`); scripts/test-all.sh
+- Day 8 — next: Prometheus metrics (`/metrics`: request/error/healing/LLM counters + healing duration histogram)
 
 **Earlier foundation (kept and reused):** I1 naive trio + cascade labs (14 rungs), I2 observability rungs 1–3 (structured logging, correlation pain, request IDs).

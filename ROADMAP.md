@@ -78,11 +78,15 @@ A lightweight reverse proxy that intercepts 4xx/5xx errors, feeds them to Gemini
 - ✅ `scripts/demo-approval.sh`: kill payment → curl hangs → pending appears → restart payment → approve via API → curl completes with `X-Healed: true` → history shows healed
 - **Demo:** Kill payment, `curl -X POST :8080/checkout` hangs, browser at `:8080/ui` shows the pending card, click Approve, curl completes healed ✅
 
-#### Day 7 — Testing + Refinement
-- End-to-end tests for each action type
-- Edge cases: Gemini timeout, circuit breaker trip, human rejection
-- Clean up logging, add request/response body capture (small bodies only)
-- **Demo:** Generate various failure scenarios, verify all paths work
+#### Day 7 — Testing + Refinement ✅
+- ✅ Test suite grew 65 → 114 top-level tests (config validation matrix alone adds 16 subtests); full `-race` suite runs in ~23s
+- ✅ Gemini client fully unit-tested with httptest fakes (`gateway/llm/gemini_test.go`, 12 tests): exact request JSON shape, fence stripping, HTTP/HTML/malformed/empty-candidates errors, client timeout, API-key redaction, empty-key short-circuit — no real API calls in tests; baseURL made injectable via `NewGeminiClientWithBaseURL`
+- ✅ Full-stack proxy E2E suite (`gateway/proxy/proxy_test.go`, 18 tests) driving the real `Gateway.ServeHTTP` + real executor + real replay through httptest upstreams and a fake analyzer: happy-path passthrough, request-ID propagation, 404, 5xx→retry heal (X-Healed headers), transport failure→recovery heal, give_up and analyzer-error passthrough, fallback heal, approval gate approved/rejected/expired (real approval store, no sleeps), skip_healing (response + transport), breaker fast-fail + half-open trial, POST body integrity (forwarded AND captured), auto_heal off (captures but never heals)
+- ✅ Body capture cap: stored `RequestBody`/`ErrorBody` truncated at 4 KiB with `...[truncated]` marker (UTF-8-safe); client/upstream forwarding stays uncapped — proven by the 10 KiB body test
+- ✅ Config tests (`gateway/config/config_test.go`): full round-trip, `${VAR}` substitution (set/empty/unset), 16-case validation matrix, malformed YAML, missing file; error-store tests: `-race` concurrency stress + `IsFailure` boundary table + truncation
+- ✅ Executor backoff base delay now injectable (`ExecutorOptions.RetryBaseDelay`, default unchanged 100ms) so retry tests run in milliseconds
+- ✅ CI hardening: `go vet` step added, tests now run with `-race`; `scripts/test-all.sh` = build + vet + race tests + coverage summary (proxy 92%, llm 90%, config 100%, errors 100%)
+- **Demo:** `scripts/demo-approval.sh` re-run live after the refactor — pending → approve → `X-Healed: true` ✅
 
 ---
 

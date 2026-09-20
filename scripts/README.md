@@ -61,6 +61,20 @@ To experience the manual flow, use `start-demo.sh`, kill payment
 (`pkill -x payment`), run `curl -X POST http://localhost:8080/checkout`
 (it hangs), open http://localhost:8080/ui, and click Approve.
 
+### test-all.sh
+The full verification gate — the same checks CI runs, plus coverage:
+1. `go build ./...` (compile everything)
+2. `go vet ./...` (static analysis)
+3. `go test -race -count=1 ./...` (full suite with the race detector, uncached)
+4. `go test -cover ./...` (per-package coverage summary)
+
+```bash
+./scripts/test-all.sh
+```
+
+Exits non-zero if any step fails. No network access or API keys needed —
+the test suite uses fakes and httptest servers only.
+
 ## Quick Start
 
 ```bash
