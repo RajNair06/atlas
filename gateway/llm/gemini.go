@@ -51,8 +51,19 @@ type Candidate struct {
 	Content Content `json:"content"`
 }
 
+// defaultBaseURL is Google's Gemini API endpoint. It lives in a constant so
+// tests can point a client at a local fake server instead.
+const defaultBaseURL = "https://generativelanguage.googleapis.com/"
+
 // NewGeminiClient creates a new Gemini API client
 func NewGeminiClient(apiKey, model string, timeout time.Duration) *GeminiClient {
+	return NewGeminiClientWithBaseURL(apiKey, model, timeout, defaultBaseURL)
+}
+
+// NewGeminiClientWithBaseURL creates a Gemini client that talks to baseURL
+// (must end in "/"). Production code uses NewGeminiClient; tests inject an
+// httptest server URL so no test ever calls the real API.
+func NewGeminiClientWithBaseURL(apiKey, model string, timeout time.Duration, baseURL string) *GeminiClient {
 	if apiKey == "" {
 		slog.Warn("GEMINI_API_KEY not set, healing will be disabled")
 	}
@@ -61,7 +72,7 @@ func NewGeminiClient(apiKey, model string, timeout time.Duration) *GeminiClient 
 		apiKey:  apiKey,
 		model:   model,
 		client:  &http.Client{Timeout: timeout},
-		baseURL: "https://generativelanguage.googleapis.com/",
+		baseURL: baseURL,
 	}
 }
 
