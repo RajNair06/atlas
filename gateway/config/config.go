@@ -18,8 +18,11 @@ type Config struct {
 
 // ServerConfig holds gateway server settings
 type ServerConfig struct {
-	Port     int  `yaml:"port"`
-	AutoHeal bool `yaml:"auto_heal"`
+	Port             int           `yaml:"port"`
+	AutoHeal         bool          `yaml:"auto_heal"`
+	HealingBudget    time.Duration `yaml:"healing_budget"`
+	BreakerThreshold int           `yaml:"breaker_threshold"`
+	BreakerReset     time.Duration `yaml:"breaker_reset"`
 }
 
 // LLMConfig holds LLM provider settings
@@ -91,6 +94,15 @@ func (c *Config) validate() error {
 	// Server validation
 	if c.Server.Port <= 0 || c.Server.Port > 65535 {
 		return fmt.Errorf("server.port must be between 1 and 65535, got %d", c.Server.Port)
+	}
+	if c.Server.HealingBudget < 0 {
+		return fmt.Errorf("server.healing_budget must not be negative, got %v", c.Server.HealingBudget)
+	}
+	if c.Server.BreakerThreshold < 0 {
+		return fmt.Errorf("server.breaker_threshold must not be negative, got %d", c.Server.BreakerThreshold)
+	}
+	if c.Server.BreakerReset < 0 {
+		return fmt.Errorf("server.breaker_reset must not be negative, got %v", c.Server.BreakerReset)
 	}
 
 	// LLM validation

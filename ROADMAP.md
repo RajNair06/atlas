@@ -55,16 +55,18 @@ A lightweight reverse proxy that intercepts 4xx/5xx errors, feeds them to Gemini
 - **Demo:** Kill payment, trigger error, call healing endpoint, get Gemini's structured suggestion ✅
 - Added demo scripts (start-demo.sh, stop-demo.sh, demo-healing.sh) for easy testing
 
-#### Day 5 — Healing Actions ▶ (Part 1 done)
-- ✅ Healing executor (`gateway/healing/executor.go`) with `RequestReplayer` interface (breaks the proxy↔healing import cycle)
+#### Day 5 — Healing Actions ✅
+- ✅ Healing executor (`gateway/healing/executor.go`) with `RequestReplayer` + `Analyzer` interfaces (breaks the proxy↔healing import cycle, enables fake-based tests)
 - ✅ Retry with exponential backoff (100ms → 200ms → 400ms, max attempts from config)
 - ✅ Synchronous auto-heal in the proxy: capture → Gemini → execute → healed response or original error (`auto_heal` config flag)
 - ✅ `X-Healed` / `X-Healing-Action` / `X-Healing-Attempts` response headers
 - ✅ Prompt tuned: connection-refused classified transient; fallback only when configured
-- ✅ 5 executor unit tests (fake replayer) + live demos: give_up path, all-retries-fail path, heal-on-recovery path (200 + X-Healed: true)
-- ⬜ Part 2: execute fallback action (replay against route fallback URL)
-- ⬜ Part 2: circuit breaker per upstream (N consecutive failures → trip → fast-fail window)
-- ⬜ Part 2: latency budget (cap total healing time per request)
+- ✅ Fallback execution: replay against route's fallback URL; plus last-resort chain (retries exhausted + fallback configured + budget left → try fallback)
+- ✅ Transport-level failures (connection refused at the gateway) now captured and healed — previously invisible
+- ✅ Circuit breaker per upstream (`breaker.go`): closed → open (threshold) → half-open (reset window, one trial) → closed/re-trip
+- ✅ Latency budget: hard cap on total healing time per request (Gemini + retries + fallback)
+- ✅ 28 unit tests in healing package (fakes for replayer + analyzer; breaker state machine; budget; chain)
+- ✅ Live demos: give_up path · retry-all-fail · heal-on-recovery (X-Healed: true) · fallback chain (200 via backup) · breaker trip (2s → 2.4ms fast-fail, ~900×) · half-open trial + re-trip
 
 #### Day 6 — Human-in-the-loop UI
 - HTML page showing pending healing decisions (Go templates)

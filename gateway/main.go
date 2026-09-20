@@ -61,7 +61,12 @@ func main() {
 	// Create healing executor and wire it back into the gateway.
 	// The executor replays failed requests through the gateway itself,
 	// so it can only be constructed after the gateway exists.
-	executor := healing.NewExecutor(decisionEngine, gw, cfg.LLM.MaxHealingAttempts)
+	executor := healing.NewExecutor(decisionEngine, gw, healing.ExecutorOptions{
+		MaxAttempts:      cfg.LLM.MaxHealingAttempts,
+		LatencyBudget:    cfg.Server.HealingBudget,
+		BreakerThreshold: cfg.Server.BreakerThreshold,
+		BreakerReset:     cfg.Server.BreakerReset,
+	})
 	gw.SetExecutor(executor)
 
 	// Create healing handler

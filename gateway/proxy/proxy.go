@@ -119,6 +119,31 @@ func (g *Gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			"upstream", route.Upstream,
 			"duration_ms", time.Since(start).Milliseconds(),
 		)
+
+		// Transport-level failure (connection refused, timeout, DNS...).
+		// Capture it like any other failure so healing can act on it —
+		// "upstream is dead" is the most common failure there is.
+		failedReq := &errors.FailedRequest{
+			RequestID:       requestID,
+			Method:          r.Method,
+			Path:            r.URL.Path,
+			Upstream:        upstreamURL,
+			Fallback:        route.Fallback,
+			StatusCode:      http.StatusBadGateway,
+			ErrorBody:       err.Error(),
+			RequestHeaders:  r.Header,
+			RequestBody:     requestBody,
+			ResponseHeaders: http.Header{},
+			Timestamp:       time.Now(),
+			DurationMs:      time.Since(start).Milliseconds(),
+		}
+		if !route.SkipHealing {
+			g.errorStore.Add(failedReq)
+		}
+		if g.attemptHealing(w, failedReq, route, requestID, start) {
+			return
+		}
+
 		http.Error(w, "upstream unavailable", http.StatusBadGateway)
 		return
 	}
@@ -166,37 +191,11 @@ func (g *Gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			"duration_ms", time.Since(start).Milliseconds(),
 		)
 
-		// Synchronous healing: analyze with Gemini and execute the suggestion
-		// before responding. The client waits and receives either the healed
-		// response or the original error — nothing is written until we decide.
-		if g.executor != nil && g.config.Server.AutoHeal {
-			result, healErr := g.executor.ExecuteHealing(failedReq)
-			if healErr != nil {
-				slog.Warn("healing failed, returning original error",
-					"request_id", requestID,
-					"error", healErr,
-					"duration_ms", time.Since(start).Milliseconds(),
-				)
-			} else {
-				slog.Info("request healed",
-					"request_id", requestID,
-					"action", result.Action,
-					"attempts", result.Attempts,
-					"status", result.StatusCode,
-					"duration_ms", time.Since(start).Milliseconds(),
-				)
-				for key, values := range result.Header {
-					for _, value := range values {
-						w.Header().Add(key, value)
-					}
-				}
-				w.Header().Set("X-Healed", "true")
-				w.Header().Set("X-Healing-Action", string(result.Action))
-				w.Header().Set("X-Healing-Attempts", strconv.Itoa(result.Attempts))
-				w.WriteHeader(result.StatusCode)
-				_, _ = w.Write(result.Body)
-				return
-			}
+		// Synchronous healing: the client waits and receives either the
+		// healed response or the original error — nothing is written until
+		// healing has decided.
+		if g.attemptHealing(w, failedReq, route, requestID, start) {
+			return
 		}
 	}
 
@@ -219,6 +218,46 @@ func (g *Gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		"status", resp.StatusCode,
 		"duration_ms", time.Since(start).Milliseconds(),
 	)
+}
+
+// attemptHealing runs the healing executor when enabled and, on success,
+// writes the healed response (plus X-Healed headers) to the client.
+// It reports whether a response was written; when false, the caller must
+// write the original error itself.
+func (g *Gateway) attemptHealing(w http.ResponseWriter, failedReq *errors.FailedRequest, route *config.RouteConfig, requestID string, start time.Time) bool {
+	if g.executor == nil || !g.config.Server.AutoHeal || route.SkipHealing {
+		return false
+	}
+
+	result, healErr := g.executor.ExecuteHealing(failedReq)
+	if healErr != nil {
+		slog.Warn("healing failed, returning original error",
+			"request_id", requestID,
+			"error", healErr,
+			"duration_ms", time.Since(start).Milliseconds(),
+		)
+		return false
+	}
+
+	slog.Info("request healed",
+		"request_id", requestID,
+		"action", result.Action,
+		"attempts", result.Attempts,
+		"status", result.StatusCode,
+		"duration_ms", time.Since(start).Milliseconds(),
+	)
+
+	for key, values := range result.Header {
+		for _, value := range values {
+			w.Header().Add(key, value)
+		}
+	}
+	w.Header().Set("X-Healed", "true")
+	w.Header().Set("X-Healing-Action", string(result.Action))
+	w.Header().Set("X-Healing-Attempts", strconv.Itoa(result.Attempts))
+	w.WriteHeader(result.StatusCode)
+	_, _ = w.Write(result.Body)
+	return true
 }
 
 // findRoute looks up the route for a given path
