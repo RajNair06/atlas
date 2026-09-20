@@ -103,7 +103,9 @@ func (g *GeminiClient) GenerateContent(prompt string) (string, error) {
 
 	resp, err := g.client.Post(url, "application/json", bytes.NewReader(reqJSON))
 	if err != nil {
-		return "", fmt.Errorf("Gemini API request failed: %w", err)
+		// Transport error text embeds the full URL, which carries the API
+		// key as a query parameter — redact it so logs never leak secrets.
+		return "", fmt.Errorf("Gemini API request failed: %s", redactKey(err.Error(), g.apiKey))
 	}
 	defer resp.Body.Close()
 
@@ -115,7 +117,7 @@ func (g *GeminiClient) GenerateContent(prompt string) (string, error) {
 
 	// Check HTTP status
 	if resp.StatusCode != http.StatusOK {
-		return "", fmt.Errorf("Gemini API returned status %d: %s", resp.StatusCode, string(body))
+		return "", fmt.Errorf("Gemini API returned status %d: %s", resp.StatusCode, redactKey(string(body), g.apiKey))
 	}
 
 	// Check if response is HTML (error page)
@@ -159,4 +161,14 @@ func min(a, b int) int {
 		return a
 	}
 	return b
+}
+
+// redactKey replaces every occurrence of the API key in msg with a fixed
+// marker, so error strings (which can embed the request URL) are safe to
+// log and return to callers.
+func redactKey(msg, apiKey string) string {
+	if apiKey == "" {
+		return msg
+	}
+	return strings.ReplaceAll(msg, apiKey, "[REDACTED]")
 }
