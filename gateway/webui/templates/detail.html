@@ -1,0 +1,73 @@
+{{/* History detail modal — swapped into #modal-root by htmx when an operator
+     clicks a history row. Backdrop and the × button both carry
+     data-modal-close; page.html's JS closes on either, plus Escape. */}}
+{{define "history-detail"}}
+<div class="modal-backdrop" data-modal-close>
+  <div class="card modal-card" role="dialog" aria-modal="true" aria-labelledby="modal-title">
+
+    <div class="flex items-start justify-between gap-3 border-b border-hairline px-5 py-4">
+      <div class="min-w-0">
+        <p class="label mb-1">healing decision</p>
+        <h3 id="modal-title" class="truncate text-sm font-semibold text-ink">{{.Method}} {{.Path}}</h3>
+      </div>
+      <button type="button" data-modal-close aria-label="Close details"
+              class="shrink-0 rounded-lg p-1.5 text-muted transition-colors duration-200 hover:bg-white/5 hover:text-ink">
+        <svg width="14" height="14" viewBox="0 0 14 14" aria-hidden="true">
+          <path d="M1 1 L13 13 M13 1 L1 13" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+        </svg>
+      </button>
+    </div>
+
+    <div class="flex flex-wrap items-center gap-2 px-5 pt-4">
+      {{template "outcome-pill" .}}
+      {{template "action-badge" .Action}}
+      <span class="badge {{.StatusClass}}">{{.StatusCode}}</span>
+    </div>
+
+    <dl class="grid grid-cols-[7.5rem_1fr] gap-x-4 gap-y-2 px-5 py-4 text-[12px]">
+      <dt class="label self-center">request</dt>
+      <dd class="font-mono text-muted">{{.RequestID}}</dd>
+      <dt class="label self-center">decision</dt>
+      <dd class="font-mono text-muted">{{.ID}}</dd>
+      <dt class="label self-center">upstream</dt>
+      <dd class="font-mono text-muted break-all">{{.Upstream}}</dd>
+      {{- if .Fallback}}
+      <dt class="label self-center">fallback</dt>
+      <dd class="font-mono text-muted break-all">{{.Fallback}}</dd>
+      {{- end}}
+      <dt class="label self-center">attempts</dt>
+      <dd class="font-mono text-muted">{{.Attempts}}</dd>
+      <dt class="label self-center">human wait</dt>
+      <dd class="font-mono text-muted">{{.Wait}}</dd>
+      <dt class="label self-center">execution</dt>
+      <dd class="font-mono text-muted">{{.Execution}}</dd>
+      <dt class="label self-center">created</dt>
+      <dd class="font-mono text-muted">{{.Created}}</dd>
+      <dt class="label self-center">decided</dt>
+      <dd class="font-mono text-muted">{{.Decided}}</dd>
+    </dl>
+
+    {{- if .Reasoning}}
+    <div class="px-5 pb-4">
+      <p class="label mb-1.5">gemini reasoning</p>
+      <blockquote class="rounded-xl border-l-2 border-accent/60 bg-white/[.03] px-4 py-3 text-[12.5px] leading-relaxed text-ink/85">{{.Reasoning}}</blockquote>
+    </div>
+    {{- end}}
+
+    {{- if .Reason}}
+    <div class="px-5 pb-4">
+      <p class="label mb-1.5">operator reason</p>
+      <p class="rounded-xl bg-rejected/10 px-4 py-3 text-[12.5px] leading-relaxed text-rejected">{{.Reason}}</p>
+    </div>
+    {{- end}}
+
+    {{- if .ErrorExcerpt}}
+    <div class="px-5 pb-5">
+      <p class="label mb-1.5">error captured</p>
+      <pre class="excerpt">{{.ErrorExcerpt}}</pre>
+    </div>
+    {{- end}}
+
+  </div>
+</div>
+{{end}}

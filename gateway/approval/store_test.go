@@ -461,3 +461,80 @@ func expireThroughStore(t *testing.T, s *Store, id string) {
 	_, errCh := await(s, testPending(id, 0), time.Millisecond)
 	<-errCh
 }
+
+func TestEnabledDefaultsTrueAndTogglesBroadcast(t *testing.T) {
+	s := NewStore()
+	if !s.Enabled() {
+		t.Fatal("gate should default to enabled (safe default for an approval feature)")
+	}
+
+	events, unsubscribe := s.Subscribe()
+	defer unsubscribe()
+
+	s.SetEnabled(false)
+	if s.Enabled() {
+		t.Fatal("gate still enabled after SetEnabled(false)")
+	}
+	select {
+	case ev := <-events:
+		if ev.Type != EventSettings {
+			t.Fatalf("event type = %q, want %q", ev.Type, EventSettings)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("SetEnabled did not broadcast a settings event")
+	}
+
+	// Setting the same value again is a no-op: no second event.
+	s.SetEnabled(false)
+	select {
+	case ev := <-events:
+		t.Fatalf("unchanged SetEnabled must not broadcast, got %+v", ev)
+	case <-time.After(30 * time.Millisecond):
+	}
+}
+
+func TestHistoryByIDCarriesFullContext(t *testing.T) {
+	s := NewStore()
+
+	pending := testPending("ctx1", time.Second)
+	pending.Fallback = "http://backup:8084"
+	pending.ErrorExcerpt = "payment unreachable: connection refused"
+	pending.Reasoning = "connection refused is usually transient"
+
+	done := make(chan struct{})
+	go func() {
+		_, _ = s.AwaitApproval(pending, 2*time.Second)
+		close(done)
+	}()
+
+	// Wait until pending, then reject so the entry lands in history.
+	deadline := time.Now().Add(time.Second)
+	for len(s.ListPending()) == 0 && time.Now().Before(deadline) {
+		time.Sleep(2 * time.Millisecond)
+	}
+	if err := s.Decide("ctx1", false, "deploy freeze"); err != nil {
+		t.Fatalf("decide: %v", err)
+	}
+	<-done
+
+	entry, ok := s.History("ctx1")
+	if !ok {
+		t.Fatal("history entry ctx1 not found")
+	}
+	if entry.Reasoning != "connection refused is usually transient" {
+		t.Fatalf("reasoning lost: %+v", entry)
+	}
+	if entry.ErrorExcerpt != "payment unreachable: connection refused" {
+		t.Fatalf("error excerpt lost: %+v", entry)
+	}
+	if entry.Fallback != "http://backup:8084" {
+		t.Fatalf("fallback lost: %+v", entry)
+	}
+	if entry.Reason != "deploy freeze" || entry.Outcome != healing.OutcomeRejected {
+		t.Fatalf("outcome/reason wrong: %+v", entry)
+	}
+
+	if _, ok := s.History("missing"); ok {
+		t.Fatal("unknown id must not be found")
+	}
+}

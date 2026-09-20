@@ -60,18 +60,24 @@ func main() {
 	// Create gateway with decision engine
 	gw := proxy.New(cfg, decisionEngine)
 
-	// Approval store: the human-in-the-loop gate. It only arms the executor
-	// when both auto_heal and require_approval are on — approval gates
-	// healing, and without healing there is nothing to gate.
+	// Approval store: the human-in-the-loop gate. It is always wired when
+	// auto-healing is on; server.require_approval is only the INITIAL state
+	// of its runtime toggle — operators flip it live from the console (/ui).
 	approvalStore := approval.NewStore()
+	approvalStore.SetEnabled(cfg.Server.RequireApproval)
 	var approver healing.Approver
-	if cfg.Server.RequireApproval && cfg.Server.AutoHeal {
+	if cfg.Server.AutoHeal {
 		approver = approvalStore
+	}
+	switch {
+	case cfg.Server.RequireApproval && cfg.Server.AutoHeal:
 		slog.Info("approval gate enabled",
 			"approval_timeout", cfg.Server.ApprovalTimeout.String(),
 		)
-	} else if cfg.Server.RequireApproval {
+	case cfg.Server.RequireApproval:
 		slog.Warn("require_approval is set but auto_heal is disabled; approval gate is inactive")
+	default:
+		slog.Info("approval gate off at startup (toggle it live in the console)")
 	}
 
 	// Create healing executor and wire it back into the gateway.
@@ -90,8 +96,8 @@ func main() {
 	// Create healing handler
 	healingHandler := healing.NewHealingHandler(gw.GetErrorStore(), decisionEngine)
 
-	// Create the healing console (dashboard UI + SSE + decision API)
-	ui := webui.NewHandler(approvalStore, cfg.Server.AutoHeal, cfg.Server.RequireApproval)
+	// Create the healing console (dashboard UI + SSE + decision API + settings)
+	ui := webui.NewHandler(approvalStore, cfg.Server.AutoHeal)
 
 	// Set up routing
 	mux := http.NewServeMux()

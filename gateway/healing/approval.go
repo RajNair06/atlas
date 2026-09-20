@@ -58,6 +58,11 @@ type PendingDecision struct {
 // Implemented by approval.Store; faked in tests. The interface lives here
 // (where it is used) so healing never imports the store or the web UI.
 type Approver interface {
+	// Enabled reports whether the gate is currently armed. The console can
+	// toggle it at runtime; when false, healing proceeds without asking and
+	// no pending decisions or history entries are produced.
+	Enabled() bool
+
 	// AwaitApproval registers the pending decision, notifies subscribers
 	// (the UI), and blocks until a verdict arrives or timeout elapses.
 	// Approved decisions return (decision, nil); rejections return the

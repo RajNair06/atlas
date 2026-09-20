@@ -34,21 +34,21 @@ const sseHeartbeat = 15 * time.Second
 
 // Handler serves everything under /ui.
 type Handler struct {
-	store           *approval.Store
-	autoHeal        bool
-	requireApproval bool
-	templates       *template.Template
-	mux             *http.ServeMux
+	store     *approval.Store
+	autoHeal  bool
+	templates *template.Template
+	mux       *http.ServeMux
 }
 
 // NewHandler builds the console. Mount the result on the gateway mux at both
-// "/ui" (exact) and "/ui/" (subtree).
-func NewHandler(store *approval.Store, autoHeal, requireApproval bool) *Handler {
+// "/ui" (exact) and "/ui/" (subtree). The approval-gate state is read live
+// from the store on every render, so the console toggle and the healing
+// pipeline can never disagree.
+func NewHandler(store *approval.Store, autoHeal bool) *Handler {
 	h := &Handler{
-		store:           store,
-		autoHeal:        autoHeal,
-		requireApproval: requireApproval,
-		templates:       template.Must(template.ParseFS(templates, "templates/*.html")),
+		store:     store,
+		autoHeal:  autoHeal,
+		templates: template.Must(template.ParseFS(templates, "templates/*.html")),
 	}
 
 	mux := http.NewServeMux()
@@ -57,11 +57,14 @@ func NewHandler(store *approval.Store, autoHeal, requireApproval bool) *Handler 
 	mux.HandleFunc("GET /ui/events", h.handleEvents)
 	mux.HandleFunc("GET /ui/decisions", h.handleDecisionsJSON)
 	mux.HandleFunc("GET /ui/history", h.handleHistoryJSON)
+	mux.HandleFunc("GET /ui/history/{id}", h.handleHistoryDetail)
 	mux.HandleFunc("POST /ui/decisions/{id}/approve", h.handleDecide(true))
 	mux.HandleFunc("POST /ui/decisions/{id}/reject", h.handleDecide(false))
+	mux.HandleFunc("POST /ui/settings/approval", h.handleApprovalSettings)
 	mux.HandleFunc("GET /ui/partials/pending", h.handlePendingPartial)
 	mux.HandleFunc("GET /ui/partials/history", h.handleHistoryPartial)
 	mux.HandleFunc("GET /ui/partials/stats", h.handleStatsPartial)
+	mux.HandleFunc("GET /ui/partials/gate", h.handleGatePartial)
 	h.mux = mux
 
 	return h
@@ -84,22 +87,29 @@ func (h *Handler) handleUISubpath(w http.ResponseWriter, r *http.Request) {
 
 // pageData is everything the full-page render needs.
 type pageData struct {
-	AutoHeal        bool
-	RequireApproval bool
-	Pending         []pendingView
-	History         []historyView
-	Stats           statsView
+	AutoHeal bool
+	Gate     gateView
+	Pending  []pendingView
+	History  []historyView
+	Stats    statsView
+}
+
+// gateView renders the runtime approval-gate toggle. When auto_heal is off
+// the switch renders disabled — there would be nothing to gate.
+type gateView struct {
+	Enabled  bool
+	AutoHeal bool
 }
 
 // handlePage renders the whole dashboard server-side; SSE + htmx keep it
 // live after load.
 func (h *Handler) handlePage(w http.ResponseWriter, r *http.Request) {
 	data := pageData{
-		AutoHeal:        h.autoHeal,
-		RequireApproval: h.requireApproval,
-		Pending:         h.pendingViews(),
-		History:         h.historyViews(),
-		Stats:           h.statsView(),
+		AutoHeal: h.autoHeal,
+		Gate:     gateView{Enabled: h.store.Enabled(), AutoHeal: h.autoHeal},
+		Pending:  h.pendingViews(),
+		History:  h.historyViews(),
+		Stats:    h.statsView(),
 	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.Header().Set("Cache-Control", "no-store")
@@ -120,6 +130,99 @@ func (h *Handler) handleHistoryPartial(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handler) handleStatsPartial(w http.ResponseWriter, r *http.Request) {
 	h.renderPartial(w, "stats", h.statsView())
+}
+
+func (h *Handler) handleGatePartial(w http.ResponseWriter, r *http.Request) {
+	h.renderPartial(w, "gate-pill", gateView{Enabled: h.store.Enabled(), AutoHeal: h.autoHeal})
+}
+
+// handleApprovalSettings flips the runtime approval gate. Body: {"enabled":
+// true|false}. The store broadcasts a "settings" SSE event, so every open
+// console re-renders its toggle — including the one that clicked it.
+func (h *Handler) handleApprovalSettings(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		Enabled *bool `json:"enabled"`
+	}
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1024)).Decode(&body); err != nil || body.Enabled == nil {
+		writeJSON(w, http.StatusBadRequest, map[string]any{"ok": false, "error": `body must be {"enabled": true|false}`})
+		return
+	}
+
+	h.store.SetEnabled(*body.Enabled)
+	slog.Info("approval gate toggled from console",
+		"enabled", *body.Enabled,
+		"remote_addr", r.RemoteAddr,
+	)
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "require_approval": *body.Enabled})
+}
+
+// detailView is the history detail modal: every field an operator needs to
+// audit one decision after the fact.
+type detailView struct {
+	ID           string
+	RequestID    string
+	Method       string
+	Path         string
+	Upstream     string
+	Fallback     string
+	StatusCode   int
+	StatusClass  string
+	Action       string
+	Reasoning    string
+	Outcome      string
+	Detail       string // tooltip on the outcome pill
+	Attempts     string
+	Wait         string
+	Execution    string
+	Created      string
+	Decided      string
+	Reason       string // operator's rejection reason, when present
+	ErrorExcerpt string
+}
+
+// handleHistoryDetail renders the modal fragment for one history entry.
+// htmx swaps it into #modal-root when a history row is clicked.
+func (h *Handler) handleHistoryDetail(w http.ResponseWriter, r *http.Request) {
+	entry, ok := h.store.History(r.PathValue("id"))
+	if !ok {
+		http.NotFound(w, r)
+		return
+	}
+
+	detail := fmt.Sprintf("%s %s → %s (%d)", entry.Method, entry.Path, entry.Upstream, entry.StatusCode)
+	if entry.Reason != "" {
+		detail = entry.Reason + " · " + detail
+	}
+
+	view := detailView{
+		ID:           entry.ID,
+		RequestID:    entry.RequestID,
+		Method:       entry.Method,
+		Path:         entry.Path,
+		Upstream:     entry.Upstream,
+		Fallback:     entry.Fallback,
+		StatusCode:   entry.StatusCode,
+		StatusClass:  statusClass(entry.StatusCode),
+		Action:       string(entry.Action),
+		Reasoning:    entry.Reasoning,
+		Outcome:      string(entry.Outcome),
+		Detail:       detail,
+		Wait:         formatDuration(entry.WaitMs),
+		Created:      entry.CreatedAt.Local().Format("2006-01-02 15:04:05.000"),
+		Decided:      entry.DecidedAt.Local().Format("2006-01-02 15:04:05.000"),
+		Reason:       entry.Reason,
+		ErrorExcerpt: entry.ErrorExcerpt,
+	}
+	switch entry.Outcome {
+	case healing.OutcomeHealed, healing.OutcomeFailed:
+		view.Attempts = fmt.Sprintf("%d %s", entry.Attempts, plural(entry.Attempts, "attempt"))
+		view.Execution = formatDuration(entry.ExecutionMs)
+	default:
+		view.Attempts = "—"
+		view.Execution = "—"
+	}
+
+	h.renderPartial(w, "history-detail", view)
 }
 
 func (h *Handler) renderPartial(w http.ResponseWriter, name string, data any) {
@@ -241,6 +344,7 @@ type pendingView struct {
 }
 
 type historyView struct {
+	ID            string
 	Time          string
 	RequestID     string
 	Action        string
@@ -260,13 +364,6 @@ func (h *Handler) pendingViews() []pendingView {
 	pending := h.store.ListPending()
 	views := make([]pendingView, 0, len(pending))
 	for _, p := range pending {
-		statusClass := "badge-status"
-		switch {
-		case p.StatusCode >= 500:
-			statusClass = "badge-5xx"
-		case p.StatusCode >= 400:
-			statusClass = "badge-4xx"
-		}
 		views = append(views, pendingView{
 			ID:             p.ID,
 			RequestID:      p.RequestID,
@@ -274,7 +371,7 @@ func (h *Handler) pendingViews() []pendingView {
 			Path:           p.Path,
 			Upstream:       p.Upstream,
 			StatusCode:     p.StatusCode,
-			StatusClass:    statusClass,
+			StatusClass:    statusClass(p.StatusCode),
 			ErrorExcerpt:   p.ErrorExcerpt,
 			Action:         string(p.Action),
 			Reasoning:      p.Reasoning,
@@ -283,6 +380,18 @@ func (h *Handler) pendingViews() []pendingView {
 		})
 	}
 	return views
+}
+
+// statusClass maps an HTTP status to its badge tone: 5xx rose, 4xx amber,
+// anything else neutral.
+func statusClass(code int) string {
+	switch {
+	case code >= 500:
+		return "badge-5xx"
+	case code >= 400:
+		return "badge-4xx"
+	}
+	return "badge-status"
 }
 
 func (h *Handler) historyViews() []historyView {
@@ -295,6 +404,7 @@ func (h *Handler) historyViews() []historyView {
 		}
 
 		view := historyView{
+			ID:        e.ID,
 			Time:      e.DecidedAt.Local().Format("15:04:05"),
 			RequestID: e.RequestID,
 			Action:    string(e.Action),

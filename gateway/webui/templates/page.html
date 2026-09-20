@@ -305,6 +305,71 @@ body {
   overflow: hidden;
 }
 
+/* ---- approval-gate switch (runtime toggle) ---- */
+
+.gate-toggle { cursor: pointer; user-select: none; transition: border-color 200ms var(--ease), background-color 200ms var(--ease); }
+.gate-toggle:hover:not(:disabled) { border-color: var(--hairline-strong); background: rgba(255, 255, 255, 0.06); }
+.gate-toggle:active:not(:disabled) { transform: scale(0.98); }
+.gate-disabled { opacity: 0.45; cursor: not-allowed; }
+
+.switch-track {
+  width: 26px; height: 14px;
+  border-radius: 9999px;
+  background: rgba(255, 255, 255, 0.10);
+  border: 1px solid var(--hairline);
+  position: relative;
+  flex: none;
+  transition: background-color 250ms var(--ease), border-color 250ms var(--ease);
+}
+.switch-knob {
+  position: absolute;
+  top: 1px; left: 1px;
+  width: 10px; height: 10px;
+  border-radius: 9999px;
+  background: #7A7F88;
+  transition: transform 250ms var(--ease), background-color 250ms var(--ease), box-shadow 250ms var(--ease);
+}
+[aria-checked="true"] .switch-track {
+  background: rgba(94, 106, 210, 0.35);
+  border-color: rgba(94, 106, 210, 0.55);
+}
+[aria-checked="true"] .switch-knob {
+  transform: translateX(12px);
+  background: var(--accent);
+  box-shadow: 0 0 8px rgba(94, 106, 210, 0.8);
+}
+
+/* ---- history detail modal ---- */
+
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  background: rgba(2, 2, 3, 0.72);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1rem;
+  animation: fade-in 200ms var(--ease);
+}
+.modal-card {
+  width: 100%;
+  max-width: 34rem;
+  max-height: 85vh;
+  overflow-y: auto;
+  background: linear-gradient(180deg, #0d0d12 0%, #08080a 100%);
+  animation: modal-rise 250ms var(--ease);
+}
+@keyframes fade-in { from { opacity: 0; } to { opacity: 1; } }
+@keyframes modal-rise {
+  from { opacity: 0; transform: translateY(10px) scale(0.98); }
+  to   { opacity: 1; transform: none; }
+}
+/* inside the modal the error excerpt shows in full — no clamp */
+.modal-card .excerpt { display: block; -webkit-line-clamp: unset; }
+
 /* ---- accessibility ---- */
 
 :focus-visible {
@@ -356,9 +421,7 @@ body {
       <span class="pill pill-plain" title="server.auto_heal in gateway.yaml">
         <span class="dot {{if .AutoHeal}}dot-on{{else}}dot-off{{end}}"></span>auto_heal {{if .AutoHeal}}on{{else}}off{{end}}
       </span>
-      <span class="pill pill-plain" title="server.require_approval in gateway.yaml">
-        <span class="dot {{if .RequireApproval}}dot-gate{{else}}dot-off{{end}}"></span>approval gate {{if .RequireApproval}}on{{else}}off{{end}}
-      </span>
+      <span id="gate">{{template "gate-pill" .Gate}}</span>
       <span class="pill pill-plain" title="Server-Sent Events connection to /ui/events">
         <span class="dot dot-dead" id="live-dot"></span><span id="live-label">connecting</span>
       </span>
@@ -403,6 +466,9 @@ body {
   <p class="font-mono text-[11px] text-muted/60">atlas · gemini suggests · humans decide · the gateway executes</p>
 </footer>
 
+<!-- history detail modal lands here (htmx swap target) -->
+<div id="modal-root"></div>
+
 <script>
 document.addEventListener('DOMContentLoaded', function () {
   'use strict';
@@ -428,8 +494,38 @@ document.addEventListener('DOMContentLoaded', function () {
     htmx.ajax('GET', '/ui/partials/pending', { target: '#pending-list', swap: 'innerHTML' });
     htmx.ajax('GET', '/ui/partials/history', { target: '#history-feed', swap: 'innerHTML' });
     htmx.ajax('GET', '/ui/partials/stats', { target: '#stats', swap: 'innerHTML' });
+    htmx.ajax('GET', '/ui/partials/gate', { target: '#gate', swap: 'innerHTML' });
   }
   document.body.addEventListener('htmx:afterSwap', tickTimers);
+
+  /* Approval-gate toggle: POST the new state, then refresh from the server
+     so the switch always renders the authoritative value. The store also
+     broadcasts a 'settings' SSE event, which syncs every OTHER open console
+     through the same refresh path. */
+  document.addEventListener('click', function (e) {
+    var toggle = e.target.closest('#approval-toggle');
+    if (toggle && !toggle.disabled) {
+      var next = toggle.getAttribute('aria-checked') !== 'true';
+      fetch('/ui/settings/approval', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ enabled: next })
+      }).then(function () { refresh(); }).catch(function () {});
+    }
+    /* Modal dismissal: only a DIRECT hit on a data-modal-close element
+       (backdrop or × button) closes — clicks inside the card bubble past
+       this check because the card itself carries no data-modal-close. */
+    if (e.target.hasAttribute && e.target.hasAttribute('data-modal-close')) {
+      var root = document.getElementById('modal-root');
+      if (root) { root.innerHTML = ''; }
+    }
+  });
+  document.addEventListener('keydown', function (e) {
+    if (e.key === 'Escape') {
+      var root = document.getElementById('modal-root');
+      if (root) { root.innerHTML = ''; }
+    }
+  });
 
   var liveDot = document.getElementById('live-dot');
   var liveLabel = document.getElementById('live-label');
@@ -447,6 +543,7 @@ document.addEventListener('DOMContentLoaded', function () {
     es.onerror = function () { setLive(false); };
     es.addEventListener('pending', refresh);
     es.addEventListener('decided', refresh);
+    es.addEventListener('settings', refresh);
   } else {
     setLive(false);
   }

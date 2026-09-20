@@ -76,6 +76,8 @@ A lightweight reverse proxy that intercepts 4xx/5xx errors, feeds them to Gemini
 - ✅ Endpoints: `GET /ui` · `GET /ui/events` (SSE) · `GET /ui/decisions` · `GET /ui/history` · `POST /ui/decisions/{id}/approve|reject` (200 `{"ok":true}` / 404 already-decided)
 - ✅ Tests: gate semantics (approved executes, rejected/expired replay zero times, budget starts post-approval), store (concurrent Decide single-winner, history cap, subscriber back-pressure), webui handlers + SSE — all green under `-race`
 - ✅ `scripts/demo-approval.sh`: kill payment → curl hangs → pending appears → restart payment → approve via API → curl completes with `X-Healed: true` → history shows healed
+- ✅ Runtime approval toggle: the console's gate pill is a live switch (`POST /ui/settings/approval`, `role="switch"`); flipping it arms/disarms the gate instantly via `Approver.Enabled()` — no restart, config is just the initial state; every open console syncs over a `settings` SSE event
+- ✅ Clickable history: rows open a detail modal (`GET /ui/history/{id}`, htmx swap into `#modal-root`) with the full audit trail — Gemini reasoning, captured error, operator rejection reason, fallback, attempts, human wait vs execution time; Escape/backdrop/× to close
 - **Demo:** Kill payment, `curl -X POST :8080/checkout` hangs, browser at `:8080/ui` shows the pending card, click Approve, curl completes healed ✅
 
 #### Day 7 — Testing + Refinement ✅

@@ -16,7 +16,7 @@ import (
 
 func newTestHandler() (*Handler, *approval.Store) {
 	store := approval.NewStore()
-	return NewHandler(store, true, true), store
+	return NewHandler(store, true), store
 }
 
 func testPending(id string) healing.PendingDecision {
@@ -280,5 +280,105 @@ func TestSSEStreamSendsHeadersAndGreeting(t *testing.T) {
 	}
 	if !seen {
 		t.Fatal("SSE stream never delivered the pending event")
+	}
+}
+
+func TestApprovalToggleEndpoint(t *testing.T) {
+	h, store := newTestHandler()
+
+	// Gate defaults to armed.
+	if !store.Enabled() {
+		t.Fatal("store should default to enabled")
+	}
+
+	// Toggle off.
+	rec := do(h, http.MethodPost, "/ui/settings/approval", `{"enabled":false}`)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("toggle status = %d, want 200", rec.Code)
+	}
+	var out map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &out); err != nil {
+		t.Fatalf("toggle body is not JSON: %v", err)
+	}
+	if out["ok"] != true || out["require_approval"] != false {
+		t.Fatalf("toggle body = %v, want ok:true require_approval:false", out)
+	}
+	if store.Enabled() {
+		t.Fatal("store still enabled after toggle off")
+	}
+
+	// The page renders the new state.
+	if body := do(h, http.MethodGet, "/ui", "").Body.String(); !strings.Contains(body, "approval gate off") {
+		t.Fatal("page should render the gate as off")
+	}
+	if body := do(h, http.MethodGet, "/ui", "").Body.String(); !strings.Contains(body, `aria-checked="false"`) {
+		t.Fatal("toggle switch should render aria-checked=false")
+	}
+
+	// Malformed body → 400, state unchanged.
+	if rec := do(h, http.MethodPost, "/ui/settings/approval", `{"nope":1}`); rec.Code != http.StatusBadRequest {
+		t.Fatalf("bad body status = %d, want 400", rec.Code)
+	}
+	if store.Enabled() {
+		t.Fatal("bad request must not change the gate state")
+	}
+
+	// Toggle back on.
+	rec = do(h, http.MethodPost, "/ui/settings/approval", `{"enabled":true}`)
+	if rec.Code != http.StatusOK || !store.Enabled() {
+		t.Fatal("toggle back on failed")
+	}
+}
+
+func TestGatePartialReflectsStore(t *testing.T) {
+	h, store := newTestHandler()
+
+	rec := do(h, http.MethodGet, "/ui/partials/gate", "")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", rec.Code)
+	}
+	if !strings.Contains(rec.Body.String(), `aria-checked="true"`) {
+		t.Fatalf("gate partial = %s, want aria-checked true", rec.Body.String())
+	}
+
+	store.SetEnabled(false)
+	rec = do(h, http.MethodGet, "/ui/partials/gate", "")
+	if !strings.Contains(rec.Body.String(), `aria-checked="false"`) || !strings.Contains(rec.Body.String(), "approval gate off") {
+		t.Fatalf("gate partial after toggle = %s", rec.Body.String())
+	}
+}
+
+func TestHistoryDetailModal(t *testing.T) {
+	h, store := newTestHandler()
+
+	// Drive one decision to rejection so history has an entry.
+	errCh := startAwait(t, store, testPending("det1"))
+	do(h, http.MethodPost, "/ui/decisions/det1/reject", `{"reason":"deploy freeze"}`)
+	<-errCh
+
+	rec := do(h, http.MethodGet, "/ui/history/det1", "")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("detail status = %d, want 200", rec.Code)
+	}
+	body := rec.Body.String()
+	for _, want := range []string{
+		"healing decision",           // modal chrome
+		"det1",                       // decision id
+		"req-det1",                   // request id
+		"gemini reasoning",           // reasoning section
+		"connection refused is usually transient", // Gemini's reasoning text
+		"operator reason",            // rejection section
+		"deploy freeze",              // the rejection reason
+		"payment unreachable",        // captured error excerpt
+		"rejected",                   // outcome pill
+	} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("detail modal missing %q\nbody: %s", want, body)
+		}
+	}
+
+	// Unknown ID → 404.
+	if rec := do(h, http.MethodGet, "/ui/history/nope", ""); rec.Code != http.StatusNotFound {
+		t.Fatalf("unknown id status = %d, want 404", rec.Code)
 	}
 }

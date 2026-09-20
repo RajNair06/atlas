@@ -16,15 +16,19 @@ type recordedOutcome struct {
 
 // fakeApprover scripts the approval gate: it records every PendingDecision it
 // was asked about and returns a canned verdict (or error) from AwaitApproval.
-// wait simulates a human taking time to decide.
+// wait simulates a human taking time to decide. disabled simulates the
+// console's runtime toggle switched off (zero value = gate armed).
 type fakeApprover struct {
 	decision Decision
 	err      error
 	wait     time.Duration
+	disabled bool
 
 	pendings []PendingDecision
 	outcomes []recordedOutcome
 }
+
+func (f *fakeApprover) Enabled() bool { return !f.disabled }
 
 func (f *fakeApprover) AwaitApproval(pending PendingDecision, timeout time.Duration) (Decision, error) {
 	if f.wait > 0 {
@@ -242,6 +246,30 @@ func TestNoGateNeverTouchesApprover(t *testing.T) {
 	}
 	if result.StatusCode != 200 {
 		t.Fatalf("status = %d, want 200", result.StatusCode)
+	}
+}
+
+func TestGateDisabledAtRuntimeHealsWithoutAsking(t *testing.T) {
+	// The console toggled the gate off: an approver exists but Enabled() is
+	// false. Healing must run exactly like the ungated path — no pending
+	// decision published, no outcome recorded, no human wait.
+	replayer := &fakeReplayer{statuses: []int{200}}
+	analyzer := &fakeAnalyzer{suggestion: retrySuggestion()}
+	approver := &fakeApprover{decision: Decision{Approved: true}, disabled: true}
+	e := gatedExecutor(analyzer, replayer, approver, time.Minute)
+
+	result, err := e.ExecuteHealing(testFailedRequest())
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result.StatusCode != 200 {
+		t.Fatalf("status = %d, want 200", result.StatusCode)
+	}
+	if len(approver.pendings) != 0 {
+		t.Fatalf("pendings = %d, want 0 — a disabled gate must not publish decisions", len(approver.pendings))
+	}
+	if len(approver.outcomes) != 0 {
+		t.Fatalf("outcomes = %d, want 0 — a disabled gate must not record outcomes", len(approver.outcomes))
 	}
 }
 

@@ -1,0 +1,11 @@
+{{/* Runtime approval-gate toggle. Rendered into #gate and re-fetched on SSE
+     events, so every open console stays in sync with the live gate state.
+     The click itself is handled by JS in page.html (fetch POST + refresh). */}}
+{{define "gate-pill"}}
+<button type="button" role="switch" aria-checked="{{if .Enabled}}true{{else}}false{{end}}" id="approval-toggle"
+        class="pill pill-plain gate-toggle{{if not .AutoHeal}} gate-disabled{{end}}"
+        {{- if not .AutoHeal}} disabled title="auto_heal is off — healing never runs, nothing to gate"{{else}} title="toggle the human approval gate at runtime"{{end}}>
+  <span class="switch-track" aria-hidden="true"><span class="switch-knob"></span></span>
+  approval gate {{if .Enabled}}on{{else}}off{{end}}
+</button>
+{{end}}

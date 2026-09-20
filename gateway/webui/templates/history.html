@@ -3,19 +3,25 @@
 <div class="card flex flex-col items-center gap-2 px-6 py-12 text-center">
   <span class="label text-muted/70">no events yet</span>
   <p class="text-sm text-muted">Nothing has been decided yet.</p>
-  <p class="max-w-xs text-xs leading-relaxed text-muted/60">Approved, rejected, and expired healing decisions land here with their outcome.</p>
+  <p class="max-w-xs text-xs leading-relaxed text-muted/60">Approved, rejected, and expired healing decisions land here with their outcome. Click any row for the full story.</p>
 </div>
 {{- else -}}
 <div class="card overflow-hidden">
   <ul class="divide-y divide-white/[.045]">
     {{- range .}}
-    <li class="history-row flex flex-wrap items-center gap-x-3 gap-y-1.5 px-4 py-3 sm:flex-nowrap">
-      <span class="w-[4.5rem] shrink-0 font-mono text-[11px] tabular-nums text-muted" title="decided at {{.Time}}">{{.Time}}</span>
-      <span class="w-[8.5rem] shrink-0 truncate font-mono text-[11px] text-muted/90" title="{{.Detail}}">{{.RequestID}}</span>
-      <span class="shrink-0">{{template "action-badge" .Action}}</span>
-      <span class="shrink-0">{{template "outcome-pill" .}}</span>
-      <span class="ml-auto shrink-0 font-mono text-[11px] tabular-nums text-muted" title="replay attempts">{{.AttemptsLabel}}</span>
-      <span class="w-16 shrink-0 text-right font-mono text-[11px] tabular-nums text-ink/85" title="execution time (healed/failed) or human wait time (rejected/expired)">{{.Duration}}</span>
+    <li class="history-row">
+      <button type="button"
+              class="flex w-full cursor-pointer flex-wrap items-center gap-x-3 gap-y-1.5 px-4 py-3 text-left sm:flex-nowrap"
+              hx-get="/ui/history/{{.ID}}" hx-target="#modal-root" hx-swap="innerHTML"
+              aria-label="View details for decision {{.ID}} on request {{.RequestID}}">
+        <span class="w-[4.5rem] shrink-0 font-mono text-[11px] tabular-nums text-muted" title="decided at {{.Time}}">{{.Time}}</span>
+        <span class="w-[8.5rem] shrink-0 truncate font-mono text-[11px] text-muted/90" title="{{.Detail}}">{{.RequestID}}</span>
+        <span class="shrink-0">{{template "action-badge" .Action}}</span>
+        <span class="shrink-0">{{template "outcome-pill" .}}</span>
+        <span class="ml-auto shrink-0 font-mono text-[11px] tabular-nums text-muted" title="replay attempts">{{.AttemptsLabel}}</span>
+        <span class="w-16 shrink-0 text-right font-mono text-[11px] tabular-nums text-ink/85" title="execution time (healed/failed) or human wait time (rejected/expired)">{{.Duration}}</span>
+        <span class="shrink-0 text-muted/50" aria-hidden="true">›</span>
+      </button>
     </li>
     {{- end}}
   </ul>

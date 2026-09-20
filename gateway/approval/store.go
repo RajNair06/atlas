@@ -14,6 +14,7 @@ import (
 	"log/slog"
 	"sort"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/RajNair06/atlas/gateway/healing"
@@ -34,24 +35,31 @@ const subscriberBuffer = 32
 const (
 	EventPending = "pending" // a new decision is awaiting approval
 	EventDecided = "decided" // a decision was approved/rejected/expired, or its outcome was recorded
+	EventSettings = "settings" // the runtime approval-gate toggle changed
 )
 
 // HistoryEntry is one decided healing decision, kept for the console feed.
+// It carries the full judgment context (Gemini's reasoning, the captured
+// error, the configured fallback) so the detail modal can render everything
+// an operator needs after the fact.
 type HistoryEntry struct {
-	ID          string                `json:"id"`
-	RequestID   string                `json:"request_id"`
-	Method      string                `json:"method"`
-	Path        string                `json:"path"`
-	Upstream    string                `json:"upstream"`
-	StatusCode  int                   `json:"status_code"`
-	Action      healing.HealingAction `json:"action"`
-	Outcome     healing.Outcome       `json:"outcome"`
-	Attempts    int                   `json:"attempts"`
-	Reason      string                `json:"reason,omitempty"`
-	CreatedAt   time.Time             `json:"created_at"`
-	DecidedAt   time.Time             `json:"decided_at"`
-	WaitMs      int64                 `json:"wait_ms"`
-	ExecutionMs int64                 `json:"execution_ms"`
+	ID           string                `json:"id"`
+	RequestID    string                `json:"request_id"`
+	Method       string                `json:"method"`
+	Path         string                `json:"path"`
+	Upstream     string                `json:"upstream"`
+	Fallback     string                `json:"fallback,omitempty"`
+	StatusCode   int                   `json:"status_code"`
+	Action       healing.HealingAction `json:"action"`
+	Reasoning    string                `json:"reasoning,omitempty"`
+	Outcome      healing.Outcome       `json:"outcome"`
+	Attempts     int                   `json:"attempts"`
+	Reason       string                `json:"reason,omitempty"`
+	ErrorExcerpt string                `json:"error_excerpt,omitempty"`
+	CreatedAt    time.Time             `json:"created_at"`
+	DecidedAt    time.Time             `json:"decided_at"`
+	WaitMs       int64                 `json:"wait_ms"`
+	ExecutionMs  int64                 `json:"execution_ms"`
 }
 
 // Stats are the live counters shown as chips in the console top bar.
@@ -79,9 +87,14 @@ type waiter struct {
 }
 
 // Store holds pending decisions, the decided history, and UI subscribers.
+// It also owns the runtime approval-gate toggle: healing checks Enabled()
+// per failure, and the console flips it live via SetEnabled.
 // The zero value is not usable; call NewStore.
 type Store struct {
 	mu sync.Mutex
+	// enabled arms the human-in-the-loop gate. Atomic because the executor
+	// reads it on the hot path while the console writes it at any time.
+	enabled atomic.Bool
 	// pending maps decision ID → waiter for decisions still awaiting a human.
 	pending map[string]*waiter
 	// inflight maps decision ID → history skeleton for approved decisions
@@ -96,13 +109,31 @@ type Store struct {
 // Compile-time proof that the store is what the executor asks for.
 var _ healing.Approver = (*Store)(nil)
 
-// NewStore creates an empty approval store.
+// NewStore creates an empty approval store with the gate ARMED (the safe
+// default for a human-approval feature). main.go sets the initial state
+// from server.require_approval; the console can toggle it at runtime.
 func NewStore() *Store {
-	return &Store{
+	s := &Store{
 		pending:     make(map[string]*waiter),
 		inflight:    make(map[string]*HistoryEntry),
 		subscribers: make(map[chan Event]struct{}),
 	}
+	s.enabled.Store(true)
+	return s
+}
+
+// Enabled implements healing.Approver: reports whether the gate is armed.
+func (s *Store) Enabled() bool { return s.enabled.Load() }
+
+// SetEnabled arms or disarms the gate at runtime and notifies subscribers
+// so every open console updates its toggle. Unchanged values are no-ops
+// (no event, no log noise).
+func (s *Store) SetEnabled(on bool) {
+	if s.enabled.Swap(on) == on {
+		return
+	}
+	slog.Info("approval gate toggled", "enabled", on)
+	s.broadcast(Event{Type: EventSettings})
 }
 
 // Subscribe registers a UI listener. The returned func unsubscribes; the
@@ -298,6 +329,20 @@ func (s *Store) ListHistory() []HistoryEntry {
 	return out
 }
 
+// History returns one decided entry by decision ID — the lookup behind the
+// console's detail modal. The history is capped at 50 entries, so a linear
+// scan under the lock is both fast and lock-order-simple.
+func (s *Store) History(id string) (HistoryEntry, bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for _, entry := range s.history {
+		if entry.ID == id {
+			return entry, true
+		}
+	}
+	return HistoryEntry{}, false
+}
+
 // Stats computes the live console counters over pending + history.
 func (s *Store) Stats() Stats {
 	s.mu.Lock()
@@ -332,22 +377,27 @@ func (s *Store) record(pending healing.PendingDecision, outcome healing.Outcome,
 	return entry
 }
 
-// baseEntry builds the history skeleton shared by every outcome.
+// baseEntry builds the history skeleton shared by every outcome. It carries
+// the full judgment context from the pending decision so the detail modal
+// can show Gemini's reasoning and the captured error after the fact.
 func baseEntry(pending healing.PendingDecision, decidedAt time.Time) HistoryEntry {
 	if decidedAt.IsZero() {
 		decidedAt = time.Now()
 	}
 	return HistoryEntry{
-		ID:         pending.ID,
-		RequestID:  pending.RequestID,
-		Method:     pending.Method,
-		Path:       pending.Path,
-		Upstream:   pending.Upstream,
-		StatusCode: pending.StatusCode,
-		Action:     pending.Action,
-		CreatedAt:  pending.CreatedAt,
-		DecidedAt:  decidedAt,
-		WaitMs:     decidedAt.Sub(pending.CreatedAt).Milliseconds(),
+		ID:           pending.ID,
+		RequestID:    pending.RequestID,
+		Method:       pending.Method,
+		Path:         pending.Path,
+		Upstream:     pending.Upstream,
+		Fallback:     pending.Fallback,
+		StatusCode:   pending.StatusCode,
+		Action:       pending.Action,
+		Reasoning:    pending.Reasoning,
+		ErrorExcerpt: pending.ErrorExcerpt,
+		CreatedAt:    pending.CreatedAt,
+		DecidedAt:    decidedAt,
+		WaitMs:       decidedAt.Sub(pending.CreatedAt).Milliseconds(),
 	}
 }
 

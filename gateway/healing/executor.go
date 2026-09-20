@@ -114,8 +114,10 @@ func (e *Executor) ExecuteHealing(failedReq *errors.FailedRequest) (*HealingResu
 	// The machine latency budget. Without the approval gate it starts now and
 	// covers analysis + execution (the original behavior). With the gate it is
 	// only computed after approval is granted — human think time must not eat
-	// the machine budget.
-	gated := e.approver != nil
+	// the machine budget. The gate is checked once per healing run: an approver
+	// that exists but is toggled off at runtime behaves exactly like no
+	// approver at all.
+	gated := e.approver != nil && e.approver.Enabled()
 	var deadline time.Time
 	if !gated {
 		deadline = time.Now().Add(e.latencyBudget)
