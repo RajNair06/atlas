@@ -109,6 +109,29 @@ func TestExecuteRetrySucceedsOnSecondAttempt(t *testing.T) {
 	}
 }
 
+func TestExecuteRetryUsesCustomBaseDelay(t *testing.T) {
+	replayer := &fakeReplayer{statuses: []int{502, 200}}
+	e := NewExecutor(nil, replayer, ExecutorOptions{
+		MaxAttempts:    3,
+		LatencyBudget:  time.Minute,
+		RetryBaseDelay: time.Millisecond, // shrink the 100ms default for fast tests
+	})
+
+	start := time.Now()
+	result, err := e.executeRetry(testFailedRequest(), retrySuggestion(), farDeadline(), new(int))
+	elapsed := time.Since(start)
+
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result.Attempts != 2 {
+		t.Fatalf("attempts = %d, want 2", result.Attempts)
+	}
+	if elapsed > 100*time.Millisecond {
+		t.Fatalf("took %s — RetryBaseDelay override was not applied", elapsed)
+	}
+}
+
 func TestExecuteRetryAllAttemptsFail(t *testing.T) {
 	replayer := &fakeReplayer{statuses: []int{502, 502, 502}}
 	e := NewExecutor(nil, replayer, generousOptions())

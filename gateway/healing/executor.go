@@ -43,6 +43,7 @@ type ExecutorOptions struct {
 	BreakerReset     time.Duration // how long a breaker stays open (default 30s)
 	Approver         Approver      // optional human-in-the-loop gate (nil = heal without asking)
 	ApprovalTimeout  time.Duration // how long a decision waits for a human (default 2m)
+	RetryBaseDelay   time.Duration // first backoff step for retries (default 100ms; tests shrink it)
 }
 
 // Executor performs the healing actions suggested by the decision engine,
@@ -56,6 +57,7 @@ type Executor struct {
 	breakers        *BreakerRegistry
 	approver        Approver
 	approvalTimeout time.Duration
+	retryBaseDelay  time.Duration
 }
 
 // defaultApprovalTimeout bounds the human wait when none is configured.
@@ -77,6 +79,9 @@ func NewExecutor(analyzer Analyzer, replayer RequestReplayer, opts ExecutorOptio
 	if opts.ApprovalTimeout <= 0 {
 		opts.ApprovalTimeout = defaultApprovalTimeout
 	}
+	if opts.RetryBaseDelay <= 0 {
+		opts.RetryBaseDelay = retryBaseDelay
+	}
 	return &Executor{
 		analyzer:        analyzer,
 		replayer:        replayer,
@@ -85,9 +90,12 @@ func NewExecutor(analyzer Analyzer, replayer RequestReplayer, opts ExecutorOptio
 		breakers:        NewBreakerRegistry(opts.BreakerThreshold, opts.BreakerReset),
 		approver:        opts.Approver,
 		approvalTimeout: opts.ApprovalTimeout,
+		retryBaseDelay:  opts.RetryBaseDelay,
 	}
 }
 
+// retryBaseDelay is the default first backoff step for retries:
+// 100ms, 200ms, 400ms... (override via ExecutorOptions.RetryBaseDelay).
 const retryBaseDelay = 100 * time.Millisecond
 
 // ExecuteHealing is the full healing pipeline for one captured failure:
@@ -191,11 +199,12 @@ func (e *Executor) ExecuteHealing(failedReq *errors.FailedRequest) (*HealingResu
 	return result, nil
 }
 
-// executeRetry replays the request with exponential backoff: 100ms, 200ms, 400ms...
-// It stops at the first success (status < 400), the latency budget, or maxAttempts.
+// executeRetry replays the request with exponential backoff: 100ms, 200ms,
+// 400ms... (base delay is configurable). It stops at the first success
+// (status < 400), the latency budget, or maxAttempts.
 // replays (may not be nil) counts every replay call for the console history.
 func (e *Executor) executeRetry(failedReq *errors.FailedRequest, suggestion *HealingSuggestion, deadline time.Time, replays *int) (*HealingResult, error) {
-	delay := retryBaseDelay
+	delay := e.retryBaseDelay
 
 	for attempt := 1; attempt <= e.maxAttempts; attempt++ {
 		if time.Now().After(deadline) {

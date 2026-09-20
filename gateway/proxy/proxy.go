@@ -53,12 +53,14 @@ func (g *Gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// Extract request ID from headers (set by correlation ID middleware)
 	requestID := r.Header.Get("X-Request-ID")
 
-	// Read request body if present (so we can store it on error)
+	// Read request body if present (so we can store it on error).
+	// The full body is always restored for forwarding — only the captured
+	// copy kept for healing is size-capped (errors.MaxCapturedBody).
 	var requestBody string
 	if r.Body != nil {
 		bodyBytes, err := io.ReadAll(r.Body)
 		if err == nil {
-			requestBody = string(bodyBytes)
+			requestBody = errors.Truncate(string(bodyBytes))
 			// Restore the body for the upstream request
 			r.Body = io.NopCloser(bytes.NewBuffer(bodyBytes))
 		}
@@ -130,7 +132,7 @@ func (g *Gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			Upstream:        upstreamURL,
 			Fallback:        route.Fallback,
 			StatusCode:      http.StatusBadGateway,
-			ErrorBody:       err.Error(),
+			ErrorBody:       errors.Truncate(err.Error()),
 			RequestHeaders:  r.Header,
 			RequestBody:     requestBody,
 			ResponseHeaders: http.Header{},
@@ -170,7 +172,7 @@ func (g *Gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			Upstream:        upstreamURL,
 			Fallback:        route.Fallback,
 			StatusCode:      resp.StatusCode,
-			ErrorBody:       string(responseBody),
+			ErrorBody:       errors.Truncate(string(responseBody)),
 			RequestHeaders:  r.Header,
 			RequestBody:     requestBody,
 			ResponseHeaders: resp.Header,
@@ -273,7 +275,8 @@ func (g *Gateway) findRoute(path string) (*config.RouteConfig, bool) {
 
 // ReplayRequest re-sends a captured failed request directly to its upstream.
 // This makes *Gateway satisfy healing.RequestReplayer. The caller owns the
-// response and must read and close resp.Body.
+// response and must read and close resp.Body. Note: it replays the captured
+// (size-capped) request body, not the original stream.
 func (g *Gateway) ReplayRequest(failedReq *errors.FailedRequest) (*http.Response, error) {
 	var body io.Reader
 	if failedReq.RequestBody != "" {

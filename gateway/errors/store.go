@@ -1,9 +1,29 @@
 package errors
 
 import (
+	"strings"
 	"sync"
 	"time"
 )
+
+// MaxCapturedBody caps how many bytes of a request or error body the store
+// keeps. The proxy still forwards full bodies untouched — this only bounds
+// the diagnostic copies captured for healing (and for the LLM prompt), so a
+// large upload or a verbose upstream error cannot balloon gateway memory.
+const MaxCapturedBody = 4 * 1024
+
+// TruncatedSuffix marks a captured body that was cut at MaxCapturedBody.
+const TruncatedSuffix = "...[truncated]"
+
+// Truncate returns s capped at MaxCapturedBody bytes with TruncatedSuffix
+// appended when anything was cut. The cut is pulled back to a valid UTF-8
+// boundary so multi-byte characters are never split in half.
+func Truncate(s string) string {
+	if len(s) <= MaxCapturedBody {
+		return s
+	}
+	return strings.ToValidUTF8(s[:MaxCapturedBody], "") + TruncatedSuffix
+}
 
 // FailedRequest captures the full context of a failed request
 type FailedRequest struct {
