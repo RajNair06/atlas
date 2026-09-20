@@ -44,6 +44,23 @@ Runs a complete demonstration of the self-healing flow:
 ./scripts/demo-healing.sh
 ```
 
+### demo-approval.sh
+Runs the human-in-the-loop approval gate end-to-end (requires
+`require_approval: true` in gateway.yaml):
+1. Starts the demo shop + gateway, checks the console (`/ui`) and SSE stream
+2. Kills payment and fires a `POST /checkout` that blocks on the gate
+3. Waits for the pending decision to appear in `GET /ui/decisions`
+4. Restarts payment, approves the decision via the API (a human would click Approve in the browser at http://localhost:8080/ui)
+5. Asserts the blocked curl completes with `X-Healed: true` and prints the healed history entry
+
+```bash
+./scripts/demo-approval.sh
+```
+
+To experience the manual flow, use `start-demo.sh`, kill payment
+(`pkill -x payment`), run `curl -X POST http://localhost:8080/checkout`
+(it hangs), open http://localhost:8080/ui, and click Approve.
+
 ## Quick Start
 
 ```bash

@@ -38,7 +38,8 @@ See `ROADMAP.md` for the day-by-day plan of the current project.
 **Current project:** Self-Healing API Gateway with LLM-powered error resolution (2-week plan, pivoted September 2026).
 
 - Days 1–4 — complete: reverse proxy, demo-shop integration, error interception, Gemini analysis
-- Day 5 Part 1 — complete: healing executor, synchronous auto-retry with exponential backoff, prompt tuning
-- Day 5 Part 2 — in progress: fallback execution, circuit breaker, latency budget
+- Day 5 — complete: healing executor, synchronous auto-retry with exponential backoff, fallback chain, per-upstream circuit breaker, latency budget
+- Day 6 — complete: human-in-the-loop approval gate (require_approval), approval store with history, SSE healing console at /ui, demo-approval.sh
+- Day 7 — next: end-to-end tests for each action type, edge cases (Gemini timeout, breaker trip, human rejection), logging cleanup
 
 **Earlier foundation (kept and reused):** I1 naive trio + cascade labs (14 rungs), I2 observability rungs 1–3 (structured logging, correlation pain, request IDs).

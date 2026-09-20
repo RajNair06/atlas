@@ -68,14 +68,15 @@ A lightweight reverse proxy that intercepts 4xx/5xx errors, feeds them to Gemini
 - ✅ 28 unit tests in healing package (fakes for replayer + analyzer; breaker state machine; budget; chain)
 - ✅ Live demos: give_up path · retry-all-fail · heal-on-recovery (X-Healed: true) · fallback chain (200 via backup) · breaker trip (2s → 2.4ms fast-fail, ~900×) · half-open trial + re-trip
 
-#### Day 6 — Human-in-the-loop UI
-- HTML page showing pending healing decisions (Go templates)
-- Each card shows: request context, Gemini suggestion, [Approve] [Reject] buttons
-- SSE endpoint for live updates when new decisions arrive
-- htmx for button interactions (no React/Vue)
-- When approved: execute action, update UI with result
-- When rejected: return original error to client
-- **Demo:** Kill payment, `curl /buy` hangs (waiting for approval), UI shows pending decision, click Approve, gateway retries, curl completes
+#### Day 6 — Human-in-the-loop UI ✅
+- ✅ Approval gate (`server.require_approval` + `server.approval_timeout`): after Gemini's suggestion, healing blocks until a human approves or rejects it; rejected → "rejected by operator: <reason>" → original error to client; timeout → decision marked expired → original error
+- ✅ `healing.Approver` interface + thread-safe approval store (`gateway/approval`): pending map with buffered decision channels, timer-based expiry, 50-entry in-memory history (healed / failed / rejected / expired with attempts + durations), non-blocking SSE event feed (slow subscribers dropped)
+- ✅ Latency-budget deadline now starts AFTER approval is granted — human think time never eats the machine budget (ungated behavior byte-for-byte unchanged)
+- ✅ Dark "healing console" dashboard (`gateway/webui`, Go templates + htmx + Tailwind CDN, no build step): pending cards with live waiting timers, history feed, stat chips, status pills, ambient layered design, aria-live regions
+- ✅ Endpoints: `GET /ui` · `GET /ui/events` (SSE) · `GET /ui/decisions` · `GET /ui/history` · `POST /ui/decisions/{id}/approve|reject` (200 `{"ok":true}` / 404 already-decided)
+- ✅ Tests: gate semantics (approved executes, rejected/expired replay zero times, budget starts post-approval), store (concurrent Decide single-winner, history cap, subscriber back-pressure), webui handlers + SSE — all green under `-race`
+- ✅ `scripts/demo-approval.sh`: kill payment → curl hangs → pending appears → restart payment → approve via API → curl completes with `X-Healed: true` → history shows healed
+- **Demo:** Kill payment, `curl -X POST :8080/checkout` hangs, browser at `:8080/ui` shows the pending card, click Approve, curl completes healed ✅
 
 #### Day 7 — Testing + Refinement
 - End-to-end tests for each action type
