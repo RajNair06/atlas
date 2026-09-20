@@ -1,0 +1,5 @@
+{{/* Shared micro-partials: badges and pills reused by both feeds. */}}
+
+{{define "action-badge"}}<span class="badge badge-{{.}}">{{if eq . "give_up"}}give up{{else}}{{.}}{{end}}</span>{{end}}
+
+{{define "outcome-pill"}}<span class="pill pill-{{.Outcome}}" title="{{.Detail}}">{{.Outcome}}</span>{{end}}

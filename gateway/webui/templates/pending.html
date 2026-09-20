@@ -1,0 +1,53 @@
+{{define "pending-list"}}
+{{- if not . -}}
+<div class="card flex flex-col items-center gap-2 px-6 py-12 text-center">
+  <span class="label text-muted/70">queue clear</span>
+  <p class="text-sm text-muted">No healing decisions are awaiting approval.</p>
+  <p class="max-w-xs text-xs leading-relaxed text-muted/60">When an upstream fails and Gemini suggests an action, the client request blocks and its card appears here.</p>
+</div>
+{{- else -}}
+<ul class="space-y-4">
+  {{- range .}}
+  <li class="card pending-card p-4 sm:p-5" id="decision-{{.ID}}">
+    <div class="flex flex-wrap items-center gap-x-2.5 gap-y-1.5">
+      <span class="pulse-dot" aria-hidden="true"></span>
+      <span class="badge {{.StatusClass}}">{{.StatusCode}}</span>
+      <p class="font-mono text-sm font-medium">{{.Method}} <span class="text-ink/80">{{.Path}}</span></p>
+      <span class="ml-auto font-mono text-[11px] tabular-nums text-accent" role="timer" data-waiting-since="{{.CreatedRFC3339}}">waiting…</span>
+    </div>
+
+    <dl class="mt-3 grid grid-cols-[5rem_1fr] gap-x-2 gap-y-1 text-[11px] sm:grid-cols-[5.5rem_1fr]">
+      <dt class="label pt-0.5">request</dt>
+      <dd class="truncate font-mono text-muted" title="{{.RequestID}}">{{.RequestID}}</dd>
+      <dt class="label pt-0.5">upstream</dt>
+      <dd class="truncate font-mono text-muted" title="{{.Upstream}}">{{.Upstream}}</dd>
+    </dl>
+
+    {{- if .ErrorExcerpt}}
+    <pre class="excerpt mt-3" title="error body excerpt">{{.ErrorExcerpt}}</pre>
+    {{- end}}
+
+    <div class="mt-3 rounded-xl border border-hairline bg-white/[.03] p-3">
+      <div class="flex flex-wrap items-center gap-2">
+        <span class="label">gemini suggests</span>
+        {{template "action-badge" .Action}}
+      </div>
+      <p class="mt-2 text-[13px] leading-relaxed text-ink/85">{{.Reasoning}}</p>
+      {{- if .Fallback}}
+      <p class="mt-2 font-mono text-[10.5px] text-muted/80" title="route fallback used as a last resort if retries exhaust">last-resort fallback: {{.Fallback}}{{.Path}}</p>
+      {{- end}}
+    </div>
+
+    <div class="mt-4 flex items-center justify-end gap-2">
+      <button type="button" class="btn btn-reject"
+              hx-post="/ui/decisions/{{.ID}}/reject" hx-swap="none" hx-disabled-elt="this"
+              aria-label="Reject healing decision {{.ID}}: {{.Action}} for {{.Method}} {{.Path}}">Reject</button>
+      <button type="button" class="btn btn-approve"
+              hx-post="/ui/decisions/{{.ID}}/approve" hx-swap="none" hx-disabled-elt="this"
+              aria-label="Approve healing decision {{.ID}}: {{.Action}} for {{.Method}} {{.Path}}">Approve</button>
+    </div>
+  </li>
+  {{- end}}
+</ul>
+{{- end}}
+{{end}}

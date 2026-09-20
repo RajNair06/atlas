@@ -42,14 +42,19 @@ func (f *fakeReplayer) ReplayRequest(req *errors.FailedRequest) (*http.Response,
 }
 
 // fakeAnalyzer returns a canned suggestion without calling any LLM.
+// delay simulates a slow LLM for budget-timing tests.
 type fakeAnalyzer struct {
 	suggestion *HealingSuggestion
 	err        error
+	delay      time.Duration
 	calls      int
 }
 
 func (f *fakeAnalyzer) AnalyzeError(req *errors.FailedRequest) (*HealingSuggestion, error) {
 	f.calls++
+	if f.delay > 0 {
+		time.Sleep(f.delay)
+	}
 	return f.suggestion, f.err
 }
 
@@ -80,7 +85,7 @@ func TestExecuteRetrySucceedsOnSecondAttempt(t *testing.T) {
 	e := NewExecutor(nil, replayer, generousOptions())
 
 	start := time.Now()
-	result, err := e.executeRetry(testFailedRequest(), retrySuggestion(), farDeadline())
+	result, err := e.executeRetry(testFailedRequest(), retrySuggestion(), farDeadline(), new(int))
 	elapsed := time.Since(start)
 
 	if err != nil {
@@ -108,7 +113,7 @@ func TestExecuteRetryAllAttemptsFail(t *testing.T) {
 	replayer := &fakeReplayer{statuses: []int{502, 502, 502}}
 	e := NewExecutor(nil, replayer, generousOptions())
 
-	_, err := e.executeRetry(testFailedRequest(), retrySuggestion(), farDeadline())
+	_, err := e.executeRetry(testFailedRequest(), retrySuggestion(), farDeadline(), new(int))
 
 	if err == nil {
 		t.Fatal("expected error after exhausting retries, got nil")
@@ -122,7 +127,7 @@ func TestExecuteRetryConnectionErrors(t *testing.T) {
 	replayer := &fakeReplayer{err: fmt.Errorf("connection refused")}
 	e := NewExecutor(nil, replayer, ExecutorOptions{MaxAttempts: 2, LatencyBudget: time.Minute})
 
-	_, err := e.executeRetry(testFailedRequest(), retrySuggestion(), farDeadline())
+	_, err := e.executeRetry(testFailedRequest(), retrySuggestion(), farDeadline(), new(int))
 
 	if err == nil {
 		t.Fatal("expected error, got nil")
@@ -136,7 +141,7 @@ func TestExecuteRetryRespectsMaxAttempts(t *testing.T) {
 	replayer := &fakeReplayer{statuses: []int{502, 502, 502, 502, 502}}
 	e := NewExecutor(nil, replayer, ExecutorOptions{MaxAttempts: 2, LatencyBudget: time.Minute})
 
-	_, err := e.executeRetry(testFailedRequest(), retrySuggestion(), farDeadline())
+	_, err := e.executeRetry(testFailedRequest(), retrySuggestion(), farDeadline(), new(int))
 
 	if err == nil {
 		t.Fatal("expected error, got nil")
@@ -150,7 +155,7 @@ func TestExecuteRetryFirstAttemptSuccess(t *testing.T) {
 	replayer := &fakeReplayer{statuses: []int{200}}
 	e := NewExecutor(nil, replayer, generousOptions())
 
-	result, err := e.executeRetry(testFailedRequest(), retrySuggestion(), farDeadline())
+	result, err := e.executeRetry(testFailedRequest(), retrySuggestion(), farDeadline(), new(int))
 
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -170,7 +175,7 @@ func TestExecuteRetryStopsAtLatencyBudget(t *testing.T) {
 	// Budget of 150ms: attempt 1 sleeps 100ms and fails; attempt 2's budget
 	// check lands at ~100ms... still inside. Tighten to 50ms so attempt 2
 	// (checked at ~100ms) is over budget.
-	_, err := e.executeRetry(testFailedRequest(), retrySuggestion(), time.Now().Add(50*time.Millisecond))
+	_, err := e.executeRetry(testFailedRequest(), retrySuggestion(), time.Now().Add(50*time.Millisecond), new(int))
 
 	if err == nil {
 		t.Fatal("expected budget error, got nil")
@@ -190,7 +195,7 @@ func TestExecuteFallbackSuccess(t *testing.T) {
 	req := testFailedRequest()
 	req.Fallback = "http://backup:8084"
 
-	result, err := e.executeFallback(req, retrySuggestion(), farDeadline())
+	result, err := e.executeFallback(req, retrySuggestion(), farDeadline(), new(int))
 
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -209,7 +214,7 @@ func TestExecuteFallbackNotConfigured(t *testing.T) {
 
 	req := testFailedRequest() // Fallback is empty
 
-	_, err := e.executeFallback(req, retrySuggestion(), farDeadline())
+	_, err := e.executeFallback(req, retrySuggestion(), farDeadline(), new(int))
 
 	if err == nil {
 		t.Fatal("expected error when no fallback configured, got nil")
@@ -226,7 +231,7 @@ func TestExecuteFallbackUpstreamFails(t *testing.T) {
 	req := testFailedRequest()
 	req.Fallback = "http://backup:8084"
 
-	_, err := e.executeFallback(req, retrySuggestion(), farDeadline())
+	_, err := e.executeFallback(req, retrySuggestion(), farDeadline(), new(int))
 
 	if err == nil {
 		t.Fatal("expected error when fallback also fails, got nil")

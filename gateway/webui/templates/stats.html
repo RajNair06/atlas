@@ -1,0 +1,11 @@
+{{define "stats"}}
+<span class="chip" title="Healing decisions awaiting approval right now">
+  <span class="chip-dot bg-accent"></span><b>{{.Pending}}</b>&nbsp;pending
+</span>
+<span class="chip" title="Healed requests in recent history">
+  <span class="chip-dot bg-healed"></span><b>{{.Healed}}</b>&nbsp;healed
+</span>
+<span class="chip" title="Average execution time of healed requests">
+  <b>{{.AvgHeal}}</b>&nbsp;avg heal
+</span>
+{{end}}

@@ -10,7 +10,13 @@
 server:
   port: 8080  # Gateway listens on this port
   auto_heal: true  # Automatically execute Gemini's healing suggestions (synchronously)
-  healing_budget: 5s   # Hard cap on total healing time per request (LLM + retries + fallback)
+  require_approval: false  # true = pause after Gemini's suggestion and wait for a human
+                           # to Approve/Reject it in the console at http://localhost:8080/ui
+                           # (only applies when auto_heal is also true)
+  approval_timeout: 120s   # How long a decision waits for a human verdict before it
+                           # expires and the client gets the original error (default 120s)
+  healing_budget: 5s   # Hard cap on total healing time per request (LLM + retries + fallback).
+                       # With require_approval, the budget starts AFTER approval is granted.
   breaker_threshold: 10  # Consecutive upstream failures before the circuit opens (0 = disabled)
   breaker_reset: 30s     # How long an open circuit fast-fails before admitting one trial
 

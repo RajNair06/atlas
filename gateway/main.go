@@ -13,10 +13,12 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/RajNair06/atlas/gateway/approval"
 	"github.com/RajNair06/atlas/gateway/config"
 	"github.com/RajNair06/atlas/gateway/healing"
 	"github.com/RajNair06/atlas/gateway/llm"
 	"github.com/RajNair06/atlas/gateway/proxy"
+	"github.com/RajNair06/atlas/gateway/webui"
 )
 
 func main() {
@@ -58,6 +60,20 @@ func main() {
 	// Create gateway with decision engine
 	gw := proxy.New(cfg, decisionEngine)
 
+	// Approval store: the human-in-the-loop gate. It only arms the executor
+	// when both auto_heal and require_approval are on — approval gates
+	// healing, and without healing there is nothing to gate.
+	approvalStore := approval.NewStore()
+	var approver healing.Approver
+	if cfg.Server.RequireApproval && cfg.Server.AutoHeal {
+		approver = approvalStore
+		slog.Info("approval gate enabled",
+			"approval_timeout", cfg.Server.ApprovalTimeout.String(),
+		)
+	} else if cfg.Server.RequireApproval {
+		slog.Warn("require_approval is set but auto_heal is disabled; approval gate is inactive")
+	}
+
 	// Create healing executor and wire it back into the gateway.
 	// The executor replays failed requests through the gateway itself,
 	// so it can only be constructed after the gateway exists.
@@ -66,15 +82,22 @@ func main() {
 		LatencyBudget:    cfg.Server.HealingBudget,
 		BreakerThreshold: cfg.Server.BreakerThreshold,
 		BreakerReset:     cfg.Server.BreakerReset,
+		Approver:         approver,
+		ApprovalTimeout:  cfg.Server.ApprovalTimeout,
 	})
 	gw.SetExecutor(executor)
 
 	// Create healing handler
 	healingHandler := healing.NewHealingHandler(gw.GetErrorStore(), decisionEngine)
 
+	// Create the healing console (dashboard UI + SSE + decision API)
+	ui := webui.NewHandler(approvalStore, cfg.Server.AutoHeal, cfg.Server.RequireApproval)
+
 	// Set up routing
 	mux := http.NewServeMux()
 	mux.Handle("/healing/", healingHandler)
+	mux.Handle("/ui", ui)
+	mux.Handle("/ui/", ui)
 	mux.Handle("/", gw)
 
 	// Wrap with correlation ID middleware

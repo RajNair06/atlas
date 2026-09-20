@@ -11,15 +11,21 @@ import (
 
 // Config is the root configuration structure
 type Config struct {
-	Server ServerConfig `yaml:"server"`
-	LLM    LLMConfig    `yaml:"llm"`
+	Server ServerConfig  `yaml:"server"`
+	LLM    LLMConfig     `yaml:"llm"`
 	Routes []RouteConfig `yaml:"routes"`
 }
+
+// defaultApprovalTimeout is how long a pending healing decision waits for a
+// human verdict when server.approval_timeout is not set.
+const defaultApprovalTimeout = 120 * time.Second
 
 // ServerConfig holds gateway server settings
 type ServerConfig struct {
 	Port             int           `yaml:"port"`
 	AutoHeal         bool          `yaml:"auto_heal"`
+	RequireApproval  bool          `yaml:"require_approval"`
+	ApprovalTimeout  time.Duration `yaml:"approval_timeout"`
 	HealingBudget    time.Duration `yaml:"healing_budget"`
 	BreakerThreshold int           `yaml:"breaker_threshold"`
 	BreakerReset     time.Duration `yaml:"breaker_reset"`
@@ -62,6 +68,12 @@ func Load(path string) (*Config, error) {
 		return nil, fmt.Errorf("parsing config: %w", err)
 	}
 
+	// Apply defaults for optional fields.
+	// approval_timeout: absent (or 0) means "wait 2 minutes for a human".
+	if cfg.Server.ApprovalTimeout == 0 {
+		cfg.Server.ApprovalTimeout = defaultApprovalTimeout
+	}
+
 	// Validate the config
 	if err := cfg.validate(); err != nil {
 		return nil, fmt.Errorf("invalid config: %w", err)
@@ -74,16 +86,16 @@ func Load(path string) (*Config, error) {
 func substituteEnvVars(content string) string {
 	// Regex to match ${VAR} patterns
 	re := regexp.MustCompile(`\$\{([A-Za-z_][A-Za-z0-9_]*)\}`)
-	
+
 	return re.ReplaceAllStringFunc(content, func(match string) string {
 		// Extract variable name (remove ${ and })
 		varName := match[2 : len(match)-1]
-		
+
 		// Get value from environment
 		if value, exists := os.LookupEnv(varName); exists {
 			return value
 		}
-		
+
 		// If not set, leave the placeholder as-is
 		return match
 	})
@@ -97,6 +109,9 @@ func (c *Config) validate() error {
 	}
 	if c.Server.HealingBudget < 0 {
 		return fmt.Errorf("server.healing_budget must not be negative, got %v", c.Server.HealingBudget)
+	}
+	if c.Server.ApprovalTimeout < 0 {
+		return fmt.Errorf("server.approval_timeout must not be negative, got %v", c.Server.ApprovalTimeout)
 	}
 	if c.Server.BreakerThreshold < 0 {
 		return fmt.Errorf("server.breaker_threshold must not be negative, got %d", c.Server.BreakerThreshold)
