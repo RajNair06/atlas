@@ -966,8 +966,8 @@ func TestProxyBreakerHalfOpenAdmitsOneTrial(t *testing.T) {
 	h := newHarness(t, harnessOptions{
 		routes:           []config.RouteConfig{testRoute("/buy", up.url)},
 		autoHeal:         true,
-		breakerThreshold: 1,                    // trips on the very first failure
-		breakerReset:     30 * time.Millisecond, // tiny window: one short sleep
+		breakerThreshold: 1,               // trips on the very first failure
+		breakerReset:     2 * time.Second, // wide enough that -race scheduling can't skip the open window
 		maxAttempts:      1,
 	})
 
@@ -991,8 +991,8 @@ func TestProxyBreakerHalfOpenAdmitsOneTrial(t *testing.T) {
 		t.Fatalf("analyzer called %d times, want it to stay at 1 while open", h.analyzer.callCount())
 	}
 
-	// Wait out the tiny reset window: the breaker goes half-open.
-	time.Sleep(40 * time.Millisecond)
+	// Wait out the reset window: the breaker goes half-open.
+	time.Sleep(2100 * time.Millisecond)
 
 	// Request 3: half-open admits exactly one trial → analyzer runs again.
 	// The trial fails (upstream still broken) → breaker re-opens.
