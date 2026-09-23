@@ -367,7 +367,7 @@ func TestHistoryDetailModal(t *testing.T) {
 		"req-det1",                   // request id
 		"gemini reasoning",           // reasoning section
 		"connection refused is usually transient", // Gemini's reasoning text
-		"operator reason",            // rejection section
+		"note",                       // operator note section
 		"deploy freeze",              // the rejection reason
 		"payment unreachable",        // captured error excerpt
 		"rejected",                   // outcome pill
@@ -380,5 +380,58 @@ func TestHistoryDetailModal(t *testing.T) {
 	// Unknown ID → 404.
 	if rec := do(h, http.MethodGet, "/ui/history/nope", ""); rec.Code != http.StatusNotFound {
 		t.Fatalf("unknown id status = %d, want 404", rec.Code)
+	}
+}
+
+func TestBannerPartialTracksGate(t *testing.T) {
+	h, store := newTestHandler()
+
+	rec := do(h, http.MethodGet, "/ui/partials/banner", "")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", rec.Code)
+	}
+	if strings.Contains(rec.Body.String(), "Approval gate OFF") {
+		t.Fatal("banner must be hidden while the gate is on")
+	}
+
+	store.SetEnabled(false)
+	rec = do(h, http.MethodGet, "/ui/partials/banner", "")
+	if !strings.Contains(rec.Body.String(), "Approval gate OFF") {
+		t.Fatalf("banner missing after gate off: %s", rec.Body.String())
+	}
+	if !strings.Contains(rec.Body.String(), "history feed") {
+		t.Fatal("banner should explain where auto outcomes go")
+	}
+}
+
+func TestPendingPartialGateOffEmptyState(t *testing.T) {
+	h, store := newTestHandler()
+	store.SetEnabled(false)
+
+	rec := do(h, http.MethodGet, "/ui/partials/pending", "")
+	body := rec.Body.String()
+	if !strings.Contains(body, "approval gate off") {
+		t.Fatalf("empty state should say the gate is off: %s", body)
+	}
+	if !strings.Contains(body, "automatically") {
+		t.Fatalf("empty state should explain auto-healing: %s", body)
+	}
+}
+
+func TestHistoryRowShowsMethodAndPath(t *testing.T) {
+	h, store := newTestHandler()
+	store.RecordAutoHeal(healing.AutoHealOutcome{
+		RequestID: "r-9", Method: "POST", Path: "/checkout",
+		Upstream: "http://x/checkout", StatusCode: 502,
+		Action: healing.ActionRetry, Healed: true, Attempts: 1,
+	})
+
+	rec := do(h, http.MethodGet, "/ui/partials/history", "")
+	body := rec.Body.String()
+	if !strings.Contains(body, "POST") || !strings.Contains(body, "/checkout") {
+		t.Fatalf("history row missing method/path: %s", body)
+	}
+	if !strings.Contains(body, "/ui/history/auto-") {
+		t.Fatalf("history row missing detail link: %s", body)
 	}
 }

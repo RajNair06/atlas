@@ -28,6 +28,11 @@ import (
 //go:embed templates/*.html
 var templates embed.FS
 
+// faviconSVG is the atlas diamond mark, served at /ui/favicon.svg.
+//
+//go:embed favicon.svg
+var faviconSVG []byte
+
 // sseHeartbeat keeps proxies and browsers from treating an idle stream as
 // dead, and proves liveness for `curl -N /ui/events`.
 const sseHeartbeat = 15 * time.Second
@@ -54,6 +59,7 @@ func NewHandler(store *approval.Store, autoHeal bool) *Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /ui", h.handlePage)
 	mux.HandleFunc("GET /ui/", h.handleUISubpath)
+	mux.HandleFunc("GET /ui/favicon.svg", h.handleFavicon)
 	mux.HandleFunc("GET /ui/events", h.handleEvents)
 	mux.HandleFunc("GET /ui/decisions", h.handleDecisionsJSON)
 	mux.HandleFunc("GET /ui/history", h.handleHistoryJSON)
@@ -65,6 +71,7 @@ func NewHandler(store *approval.Store, autoHeal bool) *Handler {
 	mux.HandleFunc("GET /ui/partials/history", h.handleHistoryPartial)
 	mux.HandleFunc("GET /ui/partials/stats", h.handleStatsPartial)
 	mux.HandleFunc("GET /ui/partials/gate", h.handleGatePartial)
+	mux.HandleFunc("GET /ui/partials/banner", h.handleBannerPartial)
 	h.mux = mux
 
 	return h
@@ -73,6 +80,13 @@ func NewHandler(store *approval.Store, autoHeal bool) *Handler {
 // ServeHTTP delegates to the console's own router.
 func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	h.mux.ServeHTTP(w, r)
+}
+
+// handleFavicon serves the embedded atlas diamond mark.
+func (h *Handler) handleFavicon(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "image/svg+xml")
+	w.Header().Set("Cache-Control", "public, max-age=3600")
+	_, _ = w.Write(faviconSVG)
 }
 
 // handleUISubpath redirects the bare trailing-slash URL and 404s anything
@@ -89,7 +103,7 @@ func (h *Handler) handleUISubpath(w http.ResponseWriter, r *http.Request) {
 type pageData struct {
 	AutoHeal bool
 	Gate     gateView
-	Pending  []pendingView
+	Pending  pendingData
 	History  []historyView
 	Stats    statsView
 }
@@ -107,7 +121,7 @@ func (h *Handler) handlePage(w http.ResponseWriter, r *http.Request) {
 	data := pageData{
 		AutoHeal: h.autoHeal,
 		Gate:     gateView{Enabled: h.store.Enabled(), AutoHeal: h.autoHeal},
-		Pending:  h.pendingViews(),
+		Pending:  pendingData{GateOn: h.store.Enabled(), Items: h.pendingViews()},
 		History:  h.historyViews(),
 		Stats:    h.statsView(),
 	}
@@ -121,7 +135,7 @@ func (h *Handler) handlePage(w http.ResponseWriter, r *http.Request) {
 // Partial handlers: htmx re-fetches these whenever an SSE event lands.
 
 func (h *Handler) handlePendingPartial(w http.ResponseWriter, r *http.Request) {
-	h.renderPartial(w, "pending-list", h.pendingViews())
+	h.renderPartial(w, "pending-list", pendingData{GateOn: h.store.Enabled(), Items: h.pendingViews()})
 }
 
 func (h *Handler) handleHistoryPartial(w http.ResponseWriter, r *http.Request) {
@@ -134,6 +148,10 @@ func (h *Handler) handleStatsPartial(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handler) handleGatePartial(w http.ResponseWriter, r *http.Request) {
 	h.renderPartial(w, "gate-pill", gateView{Enabled: h.store.Enabled(), AutoHeal: h.autoHeal})
+}
+
+func (h *Handler) handleBannerPartial(w http.ResponseWriter, r *http.Request) {
+	h.renderPartial(w, "gate-banner", gateView{Enabled: h.store.Enabled(), AutoHeal: h.autoHeal})
 }
 
 // handleApprovalSettings flips the runtime approval gate. Body: {"enabled":
@@ -347,11 +365,20 @@ type historyView struct {
 	ID            string
 	Time          string
 	RequestID     string
+	Method        string
+	Path          string
 	Action        string
 	Outcome       string
 	AttemptsLabel string
 	Duration      string
 	Detail        string // tooltip: full request + rejection reason
+}
+
+// pendingData carries the gate state alongside the pending list so the empty
+// state can explain WHY the queue is clear (gate off = auto-heal, no cards).
+type pendingData struct {
+	GateOn bool
+	Items  []pendingView
 }
 
 type statsView struct {
@@ -407,6 +434,8 @@ func (h *Handler) historyViews() []historyView {
 			ID:        e.ID,
 			Time:      e.DecidedAt.Local().Format("15:04:05"),
 			RequestID: e.RequestID,
+			Method:    e.Method,
+			Path:      e.Path,
 			Action:    string(e.Action),
 			Outcome:   string(e.Outcome),
 			Detail:    detail,

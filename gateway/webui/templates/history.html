@@ -15,7 +15,8 @@
               hx-get="/ui/history/{{.ID}}" hx-target="#modal-root" hx-swap="innerHTML"
               aria-label="View details for decision {{.ID}} on request {{.RequestID}}">
         <span class="w-[4.5rem] shrink-0 font-mono text-[11px] tabular-nums text-muted" title="decided at {{.Time}}">{{.Time}}</span>
-        <span class="w-[8.5rem] shrink-0 truncate font-mono text-[11px] text-muted/90" title="{{.Detail}}">{{.RequestID}}</span>
+        <span class="w-[9rem] shrink-0 truncate font-mono text-[11.5px] font-medium text-ink/90 sm:w-[11rem]" title="{{.Method}} {{.Path}}">{{.Method}} <span class="text-muted">{{.Path}}</span></span>
+        <span class="hidden w-[7.5rem] shrink-0 truncate font-mono text-[10.5px] text-muted/70 lg:block" title="request {{.RequestID}} · {{.Detail}}">{{.RequestID}}</span>
         <span class="shrink-0">{{template "action-badge" .Action}}</span>
         <span class="shrink-0">{{template "outcome-pill" .}}</span>
         <span class="ml-auto shrink-0 font-mono text-[11px] tabular-nums text-muted" title="replay attempts">{{.AttemptsLabel}}</span>

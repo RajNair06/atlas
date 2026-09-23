@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="color-scheme" content="dark">
 <title>atlas — healing console</title>
+<link rel="icon" type="image/svg+xml" href="/ui/favicon.svg">
 <meta name="description" content="Human-in-the-loop approval console for the atlas self-healing API gateway">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -307,6 +308,30 @@ body {
 
 /* ---- approval-gate switch (runtime toggle) ---- */
 
+.banner-autoheal {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 16px;
+  border-radius: 12px;
+  border: 1px solid rgba(217, 164, 65, 0.30);
+  background: linear-gradient(180deg, rgba(217, 164, 65, 0.10), rgba(217, 164, 65, 0.04));
+  color: #E4C37E;
+  animation: rise 300ms var(--ease);
+}
+.banner-dot {
+  width: 8px; height: 8px;
+  border-radius: 9999px;
+  background: #D9A441;
+  box-shadow: 0 0 10px rgba(217, 164, 65, 0.8);
+  flex: none;
+  animation: pulse-soft 2s ease-in-out infinite;
+}
+@keyframes pulse-soft {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.45; }
+}
+
 .gate-toggle { cursor: pointer; user-select: none; transition: border-color 200ms var(--ease), background-color 200ms var(--ease); }
 .gate-toggle:hover:not(:disabled) { border-color: var(--hairline-strong); background: rgba(255, 255, 255, 0.06); }
 .gate-toggle:active:not(:disabled) { transform: scale(0.98); }
@@ -418,7 +443,7 @@ body {
       </h1>
     </div>
     <div class="ml-auto flex flex-wrap items-center gap-2">
-      <span class="pill pill-plain" title="server.auto_heal in gateway.yaml">
+      <span class="pill pill-plain" title="Healing master switch — set by server.auto_heal in gateway.yaml (restart to change). The approval gate only applies while this is on.">
         <span class="dot {{if .AutoHeal}}dot-on{{else}}dot-off{{end}}"></span>auto_heal {{if .AutoHeal}}on{{else}}off{{end}}
       </span>
       <span id="gate">{{template "gate-pill" .Gate}}</span>
@@ -439,6 +464,10 @@ body {
 </noscript>
 
 <main class="relative z-10 mx-auto grid max-w-7xl grid-cols-1 items-start gap-6 px-4 py-6 sm:px-6 lg:grid-cols-12 lg:gap-8 lg:py-8">
+
+  <div id="banner" class="lg:col-span-12">
+    {{template "gate-banner" .Gate}}
+  </div>
 
   <section aria-labelledby="pending-heading" class="lg:col-span-5">
     <div class="mb-3 flex items-baseline justify-between gap-2">
@@ -495,6 +524,7 @@ document.addEventListener('DOMContentLoaded', function () {
     htmx.ajax('GET', '/ui/partials/history', { target: '#history-feed', swap: 'innerHTML' });
     htmx.ajax('GET', '/ui/partials/stats', { target: '#stats', swap: 'innerHTML' });
     htmx.ajax('GET', '/ui/partials/gate', { target: '#gate', swap: 'innerHTML' });
+    htmx.ajax('GET', '/ui/partials/banner', { target: '#banner', swap: 'innerHTML' });
   }
   document.body.addEventListener('htmx:afterSwap', tickTimers);
 
@@ -512,10 +542,14 @@ document.addEventListener('DOMContentLoaded', function () {
         body: JSON.stringify({ enabled: next })
       }).then(function () { refresh(); }).catch(function () {});
     }
-    /* Modal dismissal: only a DIRECT hit on a data-modal-close element
-       (backdrop or × button) closes — clicks inside the card bubble past
-       this check because the card itself carries no data-modal-close. */
-    if (e.target.hasAttribute && e.target.hasAttribute('data-modal-close')) {
+    /* Modal dismissal: the × button contains an SVG, so e.target is often the
+       icon, not the button — closest() climbs to it. The backdrop only closes
+       on a DIRECT hit (class check), so clicks inside the card never bubble
+       into a close. */
+    var closeBtn = e.target.closest ? e.target.closest('button[data-modal-close]') : null;
+    var isBackdrop = e.target.hasAttribute && e.target.hasAttribute('data-modal-close') &&
+                     e.target.classList && e.target.classList.contains('modal-backdrop');
+    if (closeBtn || isBackdrop) {
       var root = document.getElementById('modal-root');
       if (root) { root.innerHTML = ''; }
     }

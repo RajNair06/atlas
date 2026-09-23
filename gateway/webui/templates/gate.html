@@ -9,3 +9,17 @@
   approval gate {{if .Enabled}}on{{else}}off{{end}}
 </button>
 {{end}}
+
+{{/* Full-width banner shown while the gate is OFF, so the mode is impossible
+     to miss. Re-fetched with the gate pill on every SSE event. */}}
+{{define "gate-banner"}}
+{{- if and .AutoHeal (not .Enabled)}}
+<div class="banner-autoheal" role="status">
+  <span class="banner-dot" aria-hidden="true"></span>
+  <p class="text-[12.5px] leading-snug">
+    <b>Approval gate OFF — healing runs automatically.</b>
+    Failures are still analyzed and healed, and every outcome is recorded in the history feed marked <span class="font-mono text-[11px]">auto-heal</span>. No request will wait for you.
+  </p>
+</div>
+{{- end}}
+{{end}}
