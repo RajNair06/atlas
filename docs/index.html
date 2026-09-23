@@ -1,0 +1,199 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark">
+<title>atlas — the self-healing API gateway</title>
+<meta name="description" content="atlas is an open-source API gateway that detects failing requests, asks Google Gemini how to fix them, shows the plan to a human, and executes the approved fix automatically.">
+<link rel="icon" type="image/svg+xml" href="assets/favicon.svg">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="assets/styles.css">
+</head>
+<body>
+
+<div class="blob blob-a" aria-hidden="true"></div>
+<div class="blob blob-b" aria-hidden="true"></div>
+<div class="grid-overlay" aria-hidden="true"></div>
+
+<nav>
+  <div class="wrap">
+    <a class="brand" href="index.html">
+      <svg width="14" height="14" viewBox="0 0 14 14" aria-hidden="true"><path d="M7 0 L14 7 L7 14 L0 7 Z" fill="#5E6AD2"/></svg>
+      atlas <span class="dim">· self-healing gateway</span>
+    </a>
+    <div class="links">
+      <a href="index.html" class="active">Overview</a>
+      <a href="quickstart.html">Quickstart</a>
+      <a href="architecture.html">Architecture</a>
+      <a class="gh" href="https://github.com/RajNair06/atlas">GitHub ↗</a>
+    </div>
+  </div>
+</nav>
+
+<header class="hero">
+  <div class="wrap">
+    <div class="kicker"><b>AI + human in the loop</b>&nbsp;· open source · built in Go</div>
+    <h1>The API gateway that <em>heals itself</em> — after asking you first.</h1>
+    <p class="sub">
+      When a request fails, atlas captures the full context, asks Google Gemini what to do,
+      shows the plan on a live dashboard, and — once a human approves — retries, reroutes,
+      or gracefully gives up. Every decision is logged. Nothing happens in the dark.
+    </p>
+    <div class="cta-row">
+      <a class="btn btn-primary" href="#demo">▶ Watch the 90-second demo</a>
+      <a class="btn btn-ghost" href="quickstart.html">Run it yourself →</a>
+    </div>
+    <div class="chips">
+      <span class="chip">Go 1.25</span>
+      <span class="chip">Gemini API</span>
+      <span class="chip">SSE live console</span>
+      <span class="chip">htmx · no build step</span>
+      <span class="chip">114+ tests · race-clean</span>
+      <span class="chip">~92% core coverage</span>
+    </div>
+  </div>
+</header>
+
+<section id="demo">
+  <div class="wrap">
+    <h2><span class="num">01 · the demo</span>Watch a failure get healed, start to finish</h2>
+    <p class="lede">
+      A payment service dies mid-traffic. Watch the gateway catch the failure, ask the AI,
+      push an approval card to the operator's screen in real time, and — on approval —
+      retry the request to success. No page reloads anywhere.
+    </p>
+    <div class="card video-frame">
+      <video controls preload="metadata" poster="assets/approval.png">
+        <source src="assets/nav.mp4" type="video/mp4">
+        Your browser does not support embedded video — <a href="assets/nav.mp4">download the demo</a>.
+      </video>
+    </div>
+  </div>
+</section>
+
+<section>
+  <div class="wrap">
+    <h2><span class="num">02 · what you just watched</span>Four moves, every time</h2>
+    <div class="steps">
+      <div class="card step">
+        <div class="n">1</div>
+        <b>Capture</b>
+        <p>The gateway sees a 4xx/5xx (or a dead connection) and freezes the full context: request, headers, body, error, timing — keyed by a correlation ID.</p>
+      </div>
+      <div class="card step">
+        <div class="n">2</div>
+        <b>Analyze</b>
+        <p>Gemini reads the context and picks an action — retry, fallback, or give up — with a written reason. If the AI is unreachable, a deterministic rule engine takes over and says so.</p>
+      </div>
+      <div class="card step">
+        <div class="n">3</div>
+        <b>Approve</b>
+        <p>The suggestion appears as a live card on the console (pushed over SSE). The original request waits. A human clicks Approve — or Reject, or lets it expire.</p>
+      </div>
+      <div class="card step">
+        <div class="n">4</div>
+        <b>Heal</b>
+        <p>On approval the gateway replays the request with exponential backoff, or reroutes to the fallback. The waiting client simply gets a normal 200. The audit trail records everything.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section id="console">
+  <div class="wrap">
+    <h2><span class="num">03 · the console</span>A control room, not a config file</h2>
+    <p class="lede">Every healing decision — pending, approved, rejected, expired, auto-healed — is visible in real time, with the AI's reasoning and the full request context one click away.</p>
+    <div class="shot-grid">
+      <div class="card shot shot-hero">
+        <img src="assets/approval.png" alt="The healing console showing a pending approval card with Gemini's retry suggestion and Approve/Reject buttons" loading="lazy">
+        <div class="cap"><b>The approval moment</b><span>A failed GET /buy, Gemini's suggestion with its reasoning, and the two buttons that decide the request's fate. The client is parked, waiting for this click.</span></div>
+      </div>
+      <div class="card shot shot-half">
+        <img src="assets/history.png" alt="Healing history feed showing outcomes: healed, rejected, expired, auto-heal" loading="lazy">
+        <div class="cap"><b>Healing history</b><span>Every decision, newest first, with outcome pills and timing.</span></div>
+      </div>
+      <div class="card shot shot-half">
+        <img src="assets/full.png" alt="History detail modal showing the full audit trail of one healing decision" loading="lazy">
+        <div class="cap"><b>The audit trail</b><span>Click any row: reasoning, error, wait time, attempts — the whole story.</span></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section>
+  <div class="wrap">
+    <h2><span class="num">04 · in plain english</span>What is this, exactly?</h2>
+    <div class="card analogy">
+      <div>
+        <h3>The analogy</h3>
+        <p>Imagine a <b>restaurant</b>. Your waiter (the gateway) takes your order to the kitchen (your services).</p>
+        <p>Tonight, one of the kitchen stations is <b>on fire</b>. A normal waiter just comes back and says "we can't serve you." Your order dies.</p>
+        <p>The atlas waiter is different. He notices the fire, <b>asks the chef what to do</b> (Gemini), brings the suggestion to the <b>manager</b> (you, on the dashboard): "Station 3 is down — shall I send your order to the backup kitchen, or wait two minutes and try again?"</p>
+        <p>The manager nods. The waiter re-places the order. <b>You never knew there was a fire</b> — your food just arrived.</p>
+      </div>
+      <div>
+        <h3>The technical version</h3>
+        <p>atlas is a <b>reverse proxy</b> written in Go. It sits in front of your HTTP services and forwards requests to them.</p>
+        <p>When an upstream fails, it captures the request context and asks an <b>LLM</b> to classify the failure and propose an action from a fixed, safe menu: retry with backoff, reroute to a fallback, or give up.</p>
+        <p>With the <b>approval gate</b> on, a human confirms each action in a live web console before anything executes. With it off, healing is fully automatic.</p>
+        <p>Production guardrails are built in: <b>circuit breakers</b> stop retry storms, a <b>latency budget</b> caps how long healing may take, and every action lands in an <b>immutable audit history</b>.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section>
+  <div class="wrap">
+    <h2><span class="num">05 · capabilities</span>Small surface, deep engineering</h2>
+    <div class="features">
+      <div class="card feature"><span class="ico">🧠</span><b>LLM-powered triage</b><p>Gemini reads the actual error — status, body, headers, timing — and returns structured JSON, validated against a closed set of actions. Hallucinated actions are rejected at the door.</p></div>
+      <div class="card feature"><span class="ico">🛡️</span><b>Rule-based fallback brain</b><p>When the LLM is overloaded or offline, a deterministic rule engine keeps healing alive — and every suggestion discloses which brain produced it. Degradation is visible, never silent.</p></div>
+      <div class="card feature"><span class="ico">✋</span><b>Human-in-the-loop gate</b><p>Approval mode blocks the failing request until a human verdict arrives. Toggle it live from the console — no restart, no config edit.</p></div>
+      <div class="card feature"><span class="ico">⚡</span><b>Circuit breakers + budgets</b><p>Per-upstream breakers trip after repeated failures and fast-fail in ~2ms instead of burning LLM calls on a corpse. A latency budget caps every healing run.</p></div>
+      <div class="card feature"><span class="ico">📡</span><b>Real-time console</b><p>Server-Sent Events push pending cards and outcomes the instant they happen. Go templates + htmx — no React, no Node, no build step.</p></div>
+      <div class="card feature"><span class="ico">🔬</span><b>Proven, not vibes</b><p>114+ tests including full-stack E2E through the real proxy with fake LLMs, all green under Go's race detector. CI runs vet + race on every push.</p></div>
+    </div>
+  </div>
+</section>
+
+<section>
+  <div class="wrap">
+    <h2><span class="num">06 · by the numbers</span></h2>
+    <div class="stats">
+      <div class="card stat"><b>114+</b><span>tests, -race clean</span></div>
+      <div class="card stat"><b>92%</b><span>proxy coverage</span></div>
+      <div class="card stat"><b>~2ms</b><span>breaker fast-fail</span></div>
+      <div class="card stat"><b>0</b><span>npm dependencies</span></div>
+      <div class="card stat"><b>1</b><span>binary + 1 YAML</span></div>
+    </div>
+  </div>
+</section>
+
+<section>
+  <div class="wrap" style="text-align:center">
+    <h2>See it fail. Watch it heal.</h2>
+    <p class="lede" style="margin: 0 auto 32px">Clone it, break a service on purpose, and watch the console catch it live.</p>
+    <div class="cta-row">
+      <a class="btn btn-primary" href="quickstart.html">Quickstart →</a>
+      <a class="btn btn-ghost" href="architecture.html">Read the architecture</a>
+      <a class="btn btn-ghost" href="https://github.com/RajNair06/atlas">Star on GitHub ↗</a>
+    </div>
+  </div>
+</section>
+
+<footer>
+  <div class="wrap">
+    <p>atlas · gemini suggests · humans decide · the gateway executes</p>
+    <div class="links">
+      <a href="quickstart.html">Quickstart</a>
+      <a href="architecture.html">Architecture</a>
+      <a href="https://github.com/RajNair06/atlas">GitHub</a>
+    </div>
+  </div>
+</footer>
+
+</body>
+</html>

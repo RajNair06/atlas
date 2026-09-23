@@ -1,0 +1,169 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark">
+<title>Architecture — atlas</title>
+<meta name="description" content="How atlas works internally: reverse proxy, error capture, LLM analysis, the approval gate, healing execution, circuit breakers, and the design decisions behind them.">
+<link rel="icon" type="image/svg+xml" href="assets/favicon.svg">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="assets/styles.css">
+</head>
+<body>
+
+<div class="blob blob-b" aria-hidden="true"></div>
+<div class="grid-overlay" aria-hidden="true"></div>
+
+<nav>
+  <div class="wrap">
+    <a class="brand" href="index.html">
+      <svg width="14" height="14" viewBox="0 0 14 14" aria-hidden="true"><path d="M7 0 L14 7 L7 14 L0 7 Z" fill="#5E6AD2"/></svg>
+      atlas <span class="dim">· self-healing gateway</span>
+    </a>
+    <div class="links">
+      <a href="index.html">Overview</a>
+      <a href="quickstart.html">Quickstart</a>
+      <a href="architecture.html" class="active">Architecture</a>
+      <a class="gh" href="https://github.com/RajNair06/atlas">GitHub ↗</a>
+    </div>
+  </div>
+</nav>
+
+<header class="hero" style="padding: 64px 0 40px">
+  <div class="wrap">
+    <div class="kicker"><b>for the curious</b>&nbsp;· components · flows · tradeoffs</div>
+    <h1 style="font-size: clamp(30px, 4.5vw, 46px)">How atlas actually works</h1>
+    <p class="sub">One Go binary, one YAML file, ~4,000 lines of code. Here is every moving part and why it exists.</p>
+  </div>
+</header>
+
+<section>
+  <div class="wrap prose">
+
+    <h2>The shape of the system</h2>
+    <div class="card diagram">
+<pre><code>                     ┌────────────────────────────────────────────────┐
+   client ──────────▶│                 atlas gateway :8080            │
+   (curl,            │                                                │
+    browser,         │  correlation-ID middleware                     │
+    app)             │      │                                         │
+                     │      ▼                                         │
+                     │  reverse proxy ── routes by exact path ──┐     │
+                     │      │                                   │     │
+                     │      │ on 4xx/5xx or transport error:    ▼     │
+                     │      │   capture full context      upstream    │
+                     │      ▼                            services     │
+                     │  healing executor                              │
+                     │   1. circuit-breaker gate (per upstream)       │
+                     │   2. Gemini analyzes ── fallback: rule engine  │
+                     │   3. approval gate (human, live console)       │
+                     │   4. execute: retry w/ backoff ─ fallback      │
+                     │      └─ bounded by latency budget              │
+                     │      │                                         │
+                     │      ▼                                         │
+                     │  healed response ── or ── original error       │
+                     └────────────────────────────────────────────────┘
+                        console /ui: SSE live feed · approve/reject ·
+                        runtime gate toggle · clickable audit history</code></pre>
+    </div>
+
+    <h2>Components</h2>
+    <table>
+      <tr><th>Package</th><th>Responsibility</th><th>Key idea</th></tr>
+      <tr><td><code>gateway/proxy</code></td><td>Reverse proxy: routing, forwarding, error capture, replay</td><td>Buffers bodies so failures can be replayed byte-for-byte later; unified capture for HTTP errors <em>and</em> transport failures</td></tr>
+      <tr><td><code>gateway/healing</code></td><td>The brain: decision engine (prompts, parsing, validation), executor (retry/fallback/backoff), circuit breakers, approval gate contract</td><td>Depends only on small interfaces (<code>Analyzer</code>, <code>RequestReplayer</code>, <code>Approver</code>) — every collaborator is fakeable, everything is unit-testable</td></tr>
+      <tr><td><code>gateway/llm</code></td><td>Gemini API client: request shaping, response extraction, markdown-fence stripping, key redaction</td><td>Base URL is injectable, so tests run against a fake Gemini server — zero real API calls in CI</td></tr>
+      <tr><td><code>gateway/approval</code></td><td>Pending-decision store, history (capped at 50), SSE broadcast hub, runtime gate toggle</td><td>Timer-vs-verdict races resolved deterministically under one mutex; broadcasts never block on slow browsers</td></tr>
+      <tr><td><code>gateway/webui</code></td><td>The console: Go templates + htmx + SSE, served from the same binary</td><td>No build step, no Node. Server-rendered partials swapped live over an event stream</td></tr>
+      <tr><td><code>gateway/config</code></td><td>YAML loading, <code>${ENV}</code> substitution, fail-fast validation</td><td>Secrets come from the environment only; a broken config refuses to boot with a precise error</td></tr>
+      <tr><td><code>examples/demo-shop</code></td><td>Three-service fixture (storefront → checkout → payment) with chaos knobs</td><td>Purpose-built to be broken: env-var latency injection, killable at will</td></tr>
+    </table>
+
+    <h2>Life of a failing request</h2>
+    <ol>
+      <li><b>Arrival.</b> The correlation middleware stamps the request with an <code>X-Request-ID</code> (generated at the edge if absent) and logs it. The ID rides along to every upstream and appears in every log line and history entry.</li>
+      <li><b>Forwarding.</b> The proxy looks up the exact path in the route table, rebuilds the request (method, headers, buffered body), and sends it with the route's timeout.</li>
+      <li><b>Failure.</b> Either the upstream answers 4xx/5xx, or the transport itself fails (connection refused, timeout). Both paths converge: the proxy captures a <code>FailedRequest</code> — method, path, upstream, status, error body, headers, timing, the route's fallback — into the error store.</li>
+      <li><b>Breaker check.</b> The per-upstream circuit breaker is consulted first. If it's open, healing fast-fails in microseconds: no LLM call, no retries, no cost.</li>
+      <li><b>Analysis.</b> Gemini receives a structured prompt (full context + a closed menu of three actions + few-shot examples) and must answer with strict JSON: <code>{action, reasoning, fallback_path?}</code>. The response is validated — unknown actions, missing reasoning, or fallbacks without a path are rejected. <b>If Gemini is unreachable, a deterministic rule engine decides instead, and the reasoning string discloses the degradation.</b></li>
+      <li><b>The gate.</b> With approval mode on, a <code>PendingDecision</code> is published to the console over SSE and the executor <em>blocks</em>. The client's request hangs — deliberately — until a human approves, rejects, or the approval timeout expires. The latency budget starts <em>after</em> approval: human think-time never eats the machine budget.</li>
+      <li><b>Execution.</b> Retry: replays with exponential backoff (100 → 200 → 400ms), stopping at the first sub-400 response, the budget, or the attempt cap. If retries exhaust and the route has a fallback, one last-resort fallback attempt runs. Fallback: replays against the configured fallback base URL. Give-up: returns the original error untouched.</li>
+      <li><b>Response.</b> Healed? The client receives the healed response plus <code>X-Healed</code>, <code>X-Healing-Action</code>, <code>X-Healing-Attempts</code>. Not healed? The original error, byte-for-byte. Either way the outcome lands in the console history — gated and ungated alike.</li>
+    </ol>
+
+    <h2>Circuit breaker states</h2>
+    <div class="card diagram">
+<pre><code>            failure #N (N = threshold)
+   CLOSED ─────────────────────────────▶ OPEN
+     ▲                                     │  fast-fail: no LLM, no retries (~2ms)
+     │  trial succeeds                     │
+     │                                     ▼  reset window elapses
+     └────────────────────────────── HALF-OPEN
+              trial fails ──▶ re-OPEN     │
+                                          └─ admits exactly ONE trial request</code></pre>
+    </div>
+    <p>Breakers are per-upstream-URL and live in memory. Their job is threefold: protect a dying service from retry storms, protect your LLM bill from pointless analysis, and protect clients from waiting on doomed requests.</p>
+
+    <h2>Design decisions worth defending</h2>
+    <h3>Why synchronous healing (the client waits)?</h3>
+    <p>Because the alternative — return the error now, heal in the background — doesn't heal <em>this</em> request; it just decorates its failure. Blocking with an approval timeout gives the request a real chance to succeed while bounding the worst case. The tradeoff (a parked connection during approval) is explicit, and the budget system keeps the machine-time portion tight.</p>
+    <h3>Why human approval at all?</h3>
+    <p>An LLM classifying errors is fallible; retrying a non-idempotent POST against a half-dead payment service can double-charge. The gate makes a human the circuit's final breaker. It's toggleable at runtime precisely so teams can start gated and loosen as trust accumulates — with every decision audited either way.</p>
+    <h3>Why exact-match routing?</h3>
+    <p>Simplicity with zero ambiguity. Wildcards, prefix trees, and regex routes are a well-trodden path — atlas deliberately spends its complexity budget on healing, not matching. Exact match is also trivially auditable: what you configure is exactly what routes.</p>
+    <h3>Why a rule-based fallback brain?</h3>
+    <p>Born from reality: during development, Google's free tier hit a demand spike (503s across every flash model) and the whole healing pipeline went dark. A self-healing gateway whose brain dies on someone else's outage is a contradiction. The rule engine mirrors the prompt's guidance in code, keeps the console fed, and always discloses itself in the reasoning. Degradation is a first-class state, not a crash.</p>
+    <h3>Why Go templates + htmx instead of a SPA?</h3>
+    <p>The console ships inside the same binary (templates are <code>go:embed</code>-ed). No Node, no bundler, no asset pipeline — one <code>go build</code> produces the entire product. SSE + htmx partial swaps give genuine real-time behavior; the whole UI is a few hundred lines of HTML anyone can read.</p>
+
+    <h2>Testing philosophy</h2>
+    <ul>
+      <li><b>Interfaces at every seam.</b> <code>Analyzer</code>, <code>RequestReplayer</code>, <code>Approver</code>, <code>AutoRecorder</code> — production wires the real implementations; tests wire fakes. No network, no LLM bills, no flake.</li>
+      <li><b>Full-stack E2E without leaving the process.</b> The proxy suite drives the real <code>ServeHTTP</code> against real executors and fake upstreams: heals, rejections, expiries, breaker trips, body integrity, transport failures.</li>
+      <li><b>Timing assertions, not hope.</b> Backoff tests assert elapsed time; breaker tests use wide windows so the race detector can't flake them.</li>
+      <li><b>Race detector on everything.</b> CI runs <code>go vet</code> + <code>go test -race</code> on every push.</li>
+    </ul>
+
+    <h2>Repository map</h2>
+<pre><code>atlas/
+├── gateway/               the product — one binary
+│   ├── main.go            wiring, middleware, graceful shutdown
+│   ├── config/            YAML + ${ENV} + validation
+│   ├── proxy/             reverse proxy, capture, replay
+│   ├── healing/           decision engine, executor, breakers, gate contract
+│   ├── llm/               Gemini client (injectable base URL)
+│   ├── approval/          pending decisions, history, SSE hub, gate toggle
+│   └── webui/             console: embedded templates, favicon, handlers
+├── examples/demo-shop/    storefront · checkout · payment (breakable fixtures)
+├── scripts/               start/stop/demo/test helpers
+├── docs/                  this site
+├── gateway.yaml.example   documented config template
+└── Makefile               build · gateway · test · clean</code></pre>
+
+    <h2>What's intentionally NOT here (yet)</h2>
+    <ul>
+      <li><b>Persistent history</b> — in-memory, capped at 50 entries; a database is the obvious next step.</li>
+      <li><b>Authentication on the console</b> — fine for localhost; required before any shared deployment.</li>
+      <li><b>Prometheus metrics</b> — the data exists in the stores; exposing <code>/metrics</code> is planned.</li>
+      <li><b>Streaming responses</b> — bodies are buffered (needed for capture/replay); large payloads would need a size-aware streaming path.</li>
+    </ul>
+
+  </div>
+</section>
+
+<footer>
+  <div class="wrap">
+    <p>atlas · gemini suggests · humans decide · the gateway executes</p>
+    <div class="links">
+      <a href="index.html">Overview</a>
+      <a href="quickstart.html">Quickstart</a>
+      <a href="https://github.com/RajNair06/atlas">GitHub</a>
+    </div>
+  </div>
+</footer>
+
+</body>
+</html>

@@ -1,0 +1,149 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark">
+<title>Quickstart — atlas</title>
+<meta name="description" content="Run the atlas self-healing API gateway locally in five minutes: clone, add a Gemini API key, make gateway, break something on purpose, watch it heal.">
+<link rel="icon" type="image/svg+xml" href="assets/favicon.svg">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="assets/styles.css">
+</head>
+<body>
+
+<div class="blob blob-a" aria-hidden="true"></div>
+<div class="grid-overlay" aria-hidden="true"></div>
+
+<nav>
+  <div class="wrap">
+    <a class="brand" href="index.html">
+      <svg width="14" height="14" viewBox="0 0 14 14" aria-hidden="true"><path d="M7 0 L14 7 L7 14 L0 7 Z" fill="#5E6AD2"/></svg>
+      atlas <span class="dim">· self-healing gateway</span>
+    </a>
+    <div class="links">
+      <a href="index.html">Overview</a>
+      <a href="quickstart.html" class="active">Quickstart</a>
+      <a href="architecture.html">Architecture</a>
+      <a class="gh" href="https://github.com/RajNair06/atlas">GitHub ↗</a>
+    </div>
+  </div>
+</nav>
+
+<header class="hero" style="padding: 64px 0 40px">
+  <div class="wrap">
+    <div class="kicker"><b>5 minutes</b>&nbsp;· Go 1.22+ · one API key</div>
+    <h1 style="font-size: clamp(30px, 4.5vw, 46px)">Run atlas in five minutes</h1>
+    <p class="sub">Clone the repo, drop in a free Gemini API key, and watch the gateway heal a failure you caused on purpose.</p>
+  </div>
+</header>
+
+<section>
+  <div class="wrap prose">
+
+    <h2 id="prereqs">Before you start</h2>
+    <ul>
+      <li><b>Go 1.22 or newer</b> — check with <code>go version</code> (<a href="https://go.dev/dl/">download</a>)</li>
+      <li><b>A Gemini API key</b> — free at <a href="https://aistudio.google.com/app/apikey">aistudio.google.com/app/apikey</a>. It stays on your machine; it is never committed.</li>
+      <li>Anything POSIX-ish: Linux, macOS, or Windows via WSL.</li>
+    </ul>
+
+    <div class="note"><b>No API key?</b> The gateway still runs — when Gemini is unreachable, a built-in rule engine makes the healing decisions instead (every suggestion says which brain produced it). Everything below works either way.</div>
+
+    <h2 id="install">1 · Clone and configure</h2>
+<pre><code><span class="c"># clone</span>
+git clone https://github.com/RajNair06/atlas.git
+cd atlas
+
+<span class="c"># put your API key in .env (this file is gitignored — never committed)</span>
+echo <span class="k">"GEMINI_API_KEY=your_key_here"</span> &gt; .env
+
+<span class="c"># create your gateway config from the documented template</span>
+cp gateway.yaml.example gateway.yaml</code></pre>
+
+    <h2 id="run">2 · Start everything</h2>
+<pre><code>make gateway</code></pre>
+    <p>One command builds and starts five processes: the gateway on <b>:8080</b> plus a three-service demo shop behind it (storefront <b>:8081</b> → checkout <b>:8082</b> → payment <b>:8083</b>). The demo shop exists so you have something to break.</p>
+    <p>Open the console: <b><a href="http://localhost:8080/ui" style="color:var(--accent-bright)">http://localhost:8080/ui</a></b></p>
+
+    <h2 id="break">3 · Break something on purpose</h2>
+    <p>In a second terminal, kill the payment service:</p>
+<pre><code>pkill -x payment</code></pre>
+    <p>Now send a request that needs payment:</p>
+<pre><code>curl -v http://localhost:8080/buy</code></pre>
+    <p><b>The curl hangs.</b> That is not a bug — that is the product. The request failed, Gemini (or the rule engine) suggested a fix, and the gateway is holding the response until a human decides.</p>
+
+    <h2 id="approve">4 · Approve it in the console</h2>
+    <p>Look at <b>http://localhost:8080/ui</b>. A pending card appeared the moment the suggestion was ready — pushed live over Server-Sent Events, no refresh needed. It shows the failed request, the suggested action, and the AI's written reasoning.</p>
+    <p>Bring payment back, then click <b>Approve</b>:</p>
+<pre><code>PAYMENT_PORT=8083 nohup bin/payment &gt; /tmp/payment.log 2&gt;&amp;1 &amp;</code></pre>
+    <p>Your hanging curl completes: <code>order placed in 61ms</code> — with these response headers:</p>
+<pre><code>X-Healed: true
+X-Healing-Action: retry
+X-Healing-Attempts: 1</code></pre>
+    <p>The client never saw the outage. The console's history feed shows a green <b>healed</b> pill — click the row for the full audit trail.</p>
+    <p>Prefer the darker ending? Click <b>Reject</b> instead: the curl immediately receives the original 502, and history records <b>rejected</b> with your verdict.</p>
+
+    <h2 id="toggle">5 · Play with the switches</h2>
+    <ul>
+      <li><b>Approval gate toggle</b> (header switch): flip it off and healing becomes fully automatic — outcomes still stream into history, marked <code>auto-heal · approval gate off</code>.</li>
+      <li><b>Chaos knob</b>: restart payment with <code>PAYMENT_DELAY=3s</code> to simulate a slow (rather than dead) dependency.</li>
+      <li><b>Circuit breaker</b>: keep payment dead and send several requests — after 3 consecutive failures the breaker trips and subsequent failures fast-fail in ~2ms with no LLM call. Wait out the reset window and it admits a single trial request.</li>
+    </ul>
+
+    <h2 id="scripts">Included scripts</h2>
+    <table>
+      <tr><th>Script</th><th>What it does</th></tr>
+      <tr><td><code>scripts/start-demo.sh</code></td><td>Builds and starts gateway + demo shop with correct ports</td></tr>
+      <tr><td><code>scripts/stop-demo.sh</code></td><td>Stops everything cleanly</td></tr>
+      <tr><td><code>scripts/demo-healing.sh</code></td><td>Scripted end-to-end failure → analysis → suggestion run</td></tr>
+      <tr><td><code>scripts/demo-approval.sh</code></td><td>The full approval story, automated: kills payment, fires a request, waits for the pending card, approves it via the API, asserts <code>X-Healed: true</code></td></tr>
+      <tr><td><code>scripts/test-all.sh</code></td><td>build + vet + full test suite with race detector and coverage</td></tr>
+    </table>
+
+    <h2 id="config">Configuration reference</h2>
+    <p>Everything lives in one YAML file. Environment variables are substituted with <code>${VAR}</code> syntax.</p>
+    <table>
+      <tr><th>Key</th><th>Default</th><th>Meaning</th></tr>
+      <tr><td><code>server.port</code></td><td>8080</td><td>Gateway listen port</td></tr>
+      <tr><td><code>server.auto_heal</code></td><td>true</td><td>Master switch: attempt healing at all (restart to change)</td></tr>
+      <tr><td><code>server.require_approval</code></td><td>false</td><td>Initial state of the human-approval gate — <b>toggle live from the console</b></td></tr>
+      <tr><td><code>server.approval_timeout</code></td><td>2m</td><td>How long a decision waits for a human before expiring</td></tr>
+      <tr><td><code>server.healing_budget</code></td><td>5s</td><td>Hard cap on machine healing time per request (starts after approval)</td></tr>
+      <tr><td><code>server.breaker_threshold</code></td><td>10</td><td>Consecutive upstream failures that trip a circuit breaker (0 disables)</td></tr>
+      <tr><td><code>server.breaker_reset</code></td><td>30s</td><td>How long an open breaker fast-fails before admitting one trial</td></tr>
+      <tr><td><code>llm.provider / model</code></td><td>gemini / gemini-3.5-flash-lite</td><td>The AI brain</td></tr>
+      <tr><td><code>llm.api_key</code></td><td><code>${GEMINI_API_KEY}</code></td><td>From environment only — never hardcode</td></tr>
+      <tr><td><code>llm.timeout</code></td><td>2s</td><td>Per-call LLM timeout</td></tr>
+      <tr><td><code>routes[].path / upstream</code></td><td>—</td><td>Exact-match route → upstream base URL</td></tr>
+      <tr><td><code>routes[].fallback</code></td><td>""</td><td>Backup base URL used by the fallback action and as a last resort after retries</td></tr>
+      <tr><td><code>routes[].timeout / retries</code></td><td>—</td><td>Upstream call timeout; max replay attempts</td></tr>
+      <tr><td><code>routes[].skip_healing</code></td><td>false</td><td>Pass failures straight through (health checks, etc.)</td></tr>
+    </table>
+
+    <h2 id="troubleshooting">Troubleshooting</h2>
+    <ul>
+      <li><b>Port already in use</b> — <code>lsof -i :8080</code> to find the squatter; <code>scripts/stop-demo.sh</code> clears atlas's own processes.</li>
+      <li><b>"API key not valid"</b> — check <code>.env</code> exists and the gateway was started with it sourced (<code>make gateway</code> does this automatically).</li>
+      <li><b>Gemini 503 "high demand"</b> — free-tier models spike. atlas degrades to its rule engine automatically; retry later for AI reasoning.</li>
+      <li><b>No pending card appears</b> — the breaker may be open from earlier failures (fast-fails skip the LLM). Wait out <code>breaker_reset</code>, or restart the gateway to clear breaker state.</li>
+    </ul>
+
+  </div>
+</section>
+
+<footer>
+  <div class="wrap">
+    <p>atlas · gemini suggests · humans decide · the gateway executes</p>
+    <div class="links">
+      <a href="index.html">Overview</a>
+      <a href="architecture.html">Architecture</a>
+      <a href="https://github.com/RajNair06/atlas">GitHub</a>
+    </div>
+  </div>
+</footer>
+
+</body>
+</html>
