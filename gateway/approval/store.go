@@ -108,6 +108,7 @@ type Store struct {
 
 // Compile-time proof that the store is what the executor asks for.
 var _ healing.Approver = (*Store)(nil)
+var _ healing.AutoRecorder = (*Store)(nil)
 
 // NewStore creates an empty approval store with the gate ARMED (the safe
 // default for a human-approval feature). main.go sets the initial state
@@ -305,6 +306,51 @@ func (s *Store) RecordOutcome(id string, outcome healing.Outcome, attempts int, 
 	)
 	done := *entry
 	s.broadcast(Event{Type: EventDecided, Entry: &done})
+}
+
+// RecordAutoHeal implements healing.AutoRecorder: it adds an UNGATED healing
+// outcome (approval gate off) to the same history feed and broadcasts it, so
+// the console stays live and complete regardless of gate state. No human was
+// involved, so WaitMs is 0 and the note marks it as automatic.
+func (s *Store) RecordAutoHeal(outcome healing.AutoHealOutcome) {
+	now := time.Now()
+	pending := healing.PendingDecision{
+		ID:           fmt.Sprintf("auto-%x", now.UnixNano()),
+		RequestID:    outcome.RequestID,
+		Method:       outcome.Method,
+		Path:         outcome.Path,
+		Upstream:     outcome.Upstream,
+		Fallback:     outcome.Fallback,
+		StatusCode:   outcome.StatusCode,
+		ErrorExcerpt: outcome.ErrorExcerpt,
+		Action:       outcome.Action,
+		Reasoning:    outcome.Reasoning,
+		CreatedAt:    now,
+	}
+
+	result := healing.OutcomeFailed
+	if outcome.Healed {
+		result = healing.OutcomeHealed
+	}
+
+	entry := baseEntry(pending, now)
+	entry.Outcome = result
+	entry.Attempts = outcome.Attempts
+	entry.Reason = "auto-heal · approval gate off"
+	entry.ExecutionMs = outcome.ExecutionMs
+
+	s.mu.Lock()
+	s.prependHistory(entry)
+	s.mu.Unlock()
+
+	slog.Info("auto-heal outcome recorded",
+		"request_id", entry.RequestID,
+		"action", entry.Action,
+		"outcome", entry.Outcome,
+		"attempts", outcome.Attempts,
+		"execution_ms", entry.ExecutionMs,
+	)
+	s.broadcast(Event{Type: EventDecided, Entry: &entry})
 }
 
 // ListPending returns decisions awaiting approval, oldest first (stable

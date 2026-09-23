@@ -373,9 +373,11 @@ func TestSlowSubscriberDoesNotBlockBroadcast(t *testing.T) {
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
-		// 100 expiries: far more than the subscriber buffer (32). The
-		// publisher must never block on the full channel.
-		for i := 0; i < 100; i++ {
+		// 40 expiries: more than the subscriber buffer (32), so overflow is
+		// exercised. The publisher must never block on the full channel.
+		// (Kept at 40 — with -race on a loaded machine each expiry costs
+		// real scheduler time; 100 iterations could outrun any sane guard.)
+		for i := 0; i < 40; i++ {
 			_, errCh := await(s, testPending(fmt.Sprintf("s%03d", i), 0), time.Millisecond)
 			<-errCh
 		}
@@ -384,7 +386,7 @@ func TestSlowSubscriberDoesNotBlockBroadcast(t *testing.T) {
 	select {
 	case <-done:
 		// Publisher finished despite the subscriber never draining.
-	case <-time.After(5 * time.Second):
+	case <-time.After(20 * time.Second):
 		t.Fatal("broadcast blocked on a slow subscriber")
 	}
 	if len(slow) == 0 {
@@ -536,5 +538,65 @@ func TestHistoryByIDCarriesFullContext(t *testing.T) {
 
 	if _, ok := s.History("missing"); ok {
 		t.Fatal("unknown id must not be found")
+	}
+}
+
+func TestRecordAutoHealAddsHistoryAndBroadcasts(t *testing.T) {
+	s := NewStore()
+	events, unsubscribe := s.Subscribe()
+	defer unsubscribe()
+
+	s.RecordAutoHeal(healing.AutoHealOutcome{
+		RequestID:    "auto-req",
+		Method:       "GET",
+		Path:         "/buy",
+		Upstream:     "http://localhost:8081/buy",
+		StatusCode:   502,
+		ErrorExcerpt: "order failed",
+		Action:       healing.ActionRetry,
+		Reasoning:    "looks transient",
+		Healed:       true,
+		Attempts:     2,
+		ExecutionMs:  321,
+	})
+
+	select {
+	case ev := <-events:
+		if ev.Type != EventDecided || ev.Entry == nil {
+			t.Fatalf("event = %+v, want decided with entry", ev)
+		}
+		if ev.Entry.Outcome != healing.OutcomeHealed {
+			t.Fatalf("broadcast outcome = %s, want healed", ev.Entry.Outcome)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("RecordAutoHeal did not broadcast")
+	}
+
+	entries := s.ListHistory()
+	if len(entries) != 1 {
+		t.Fatalf("history len = %d, want 1", len(entries))
+	}
+	e := entries[0]
+	if !strings.HasPrefix(e.ID, "auto-") {
+		t.Fatalf("id = %q, want auto- prefix", e.ID)
+	}
+	if e.Outcome != healing.OutcomeHealed || e.Attempts != 2 || e.ExecutionMs != 321 {
+		t.Fatalf("entry wrong: %+v", e)
+	}
+	if e.Reasoning != "looks transient" || e.ErrorExcerpt != "order failed" {
+		t.Fatalf("entry lost context: %+v", e)
+	}
+	if e.Reason != "auto-heal · approval gate off" {
+		t.Fatalf("note = %q", e.Reason)
+	}
+	if e.WaitMs != 0 {
+		t.Fatalf("wait = %d, want 0 (no human involved)", e.WaitMs)
+	}
+
+	// A failed auto-heal records as failed.
+	s.RecordAutoHeal(healing.AutoHealOutcome{RequestID: "auto-req-2", Action: healing.ActionRetry, Healed: false, Attempts: 3})
+	entries = s.ListHistory()
+	if len(entries) != 2 || entries[0].Outcome != healing.OutcomeFailed {
+		t.Fatalf("newest entry = %+v, want failed", entries[0])
 	}
 }

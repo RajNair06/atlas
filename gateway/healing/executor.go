@@ -23,6 +23,29 @@ type Analyzer interface {
 	AnalyzeError(failedReq *errors.FailedRequest) (*HealingSuggestion, error)
 }
 
+// AutoHealOutcome summarizes one UNGATED healing run (approval gate off) so
+// the console history stays complete even when no human was asked.
+type AutoHealOutcome struct {
+	RequestID    string
+	Method       string
+	Path         string
+	Upstream     string
+	Fallback     string
+	StatusCode   int
+	ErrorExcerpt string
+	Action       HealingAction
+	Reasoning    string
+	Healed       bool
+	Attempts     int
+	ExecutionMs  int64
+}
+
+// AutoRecorder receives ungated healing outcomes. Implemented by the
+// approval store; optional (nil = don't record).
+type AutoRecorder interface {
+	RecordAutoHeal(outcome AutoHealOutcome)
+}
+
 // HealingResult carries the successful response produced by a healing action,
 // plus metadata about how it was produced. The body is fully read so the
 // caller owns plain bytes — no streams to close, no leaked connections.
@@ -44,6 +67,7 @@ type ExecutorOptions struct {
 	Approver         Approver      // optional human-in-the-loop gate (nil = heal without asking)
 	ApprovalTimeout  time.Duration // how long a decision waits for a human (default 2m)
 	RetryBaseDelay   time.Duration // first backoff step for retries (default 100ms; tests shrink it)
+	AutoRecorder     AutoRecorder  // optional sink for ungated healing outcomes (console history)
 }
 
 // Executor performs the healing actions suggested by the decision engine,
@@ -58,6 +82,7 @@ type Executor struct {
 	approver        Approver
 	approvalTimeout time.Duration
 	retryBaseDelay  time.Duration
+	autoRecorder    AutoRecorder
 }
 
 // defaultApprovalTimeout bounds the human wait when none is configured.
@@ -91,6 +116,7 @@ func NewExecutor(analyzer Analyzer, replayer RequestReplayer, opts ExecutorOptio
 		approver:        opts.Approver,
 		approvalTimeout: opts.ApprovalTimeout,
 		retryBaseDelay:  opts.RetryBaseDelay,
+		autoRecorder:    opts.AutoRecorder,
 	}
 }
 
@@ -191,6 +217,28 @@ func (e *Executor) ExecuteHealing(failedReq *errors.FailedRequest) (*HealingResu
 			outcome, attempts = OutcomeHealed, result.Attempts
 		}
 		e.approver.RecordOutcome(pending.ID, outcome, attempts, time.Since(execStarted))
+	} else if e.autoRecorder != nil {
+		// Ungated run: still tell the console what happened, so the history
+		// feed stays live (and honest) when no human was asked.
+		outcome := AutoHealOutcome{
+			RequestID:    failedReq.RequestID,
+			Method:       failedReq.Method,
+			Path:         failedReq.Path,
+			Upstream:     failedReq.Upstream,
+			Fallback:     failedReq.Fallback,
+			StatusCode:   failedReq.StatusCode,
+			ErrorExcerpt: failedReq.ErrorBody,
+			Action:       suggestion.Action,
+			Reasoning:    suggestion.Reasoning,
+			Healed:       err == nil,
+			Attempts:     replays,
+			ExecutionMs:  time.Since(execStarted).Milliseconds(),
+		}
+		if err == nil {
+			outcome.Action = result.Action // the chain may have ended in fallback
+			outcome.Attempts = result.Attempts
+		}
+		e.autoRecorder.RecordAutoHeal(outcome)
 	}
 
 	if err != nil {

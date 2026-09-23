@@ -249,14 +249,34 @@ func TestNoGateNeverTouchesApprover(t *testing.T) {
 	}
 }
 
+// fakeRecorder captures ungated healing outcomes for assertions.
+type fakeRecorder struct {
+	outcomes []AutoHealOutcome
+}
+
+func (f *fakeRecorder) RecordAutoHeal(outcome AutoHealOutcome) {
+	f.outcomes = append(f.outcomes, outcome)
+}
+
+var _ AutoRecorder = (*fakeRecorder)(nil)
+
 func TestGateDisabledAtRuntimeHealsWithoutAsking(t *testing.T) {
 	// The console toggled the gate off: an approver exists but Enabled() is
 	// false. Healing must run exactly like the ungated path — no pending
-	// decision published, no outcome recorded, no human wait.
+	// decision published, no gated outcome recorded — but the auto-recorder
+	// still sees the result so the console history stays complete.
 	replayer := &fakeReplayer{statuses: []int{200}}
 	analyzer := &fakeAnalyzer{suggestion: retrySuggestion()}
 	approver := &fakeApprover{decision: Decision{Approved: true}, disabled: true}
-	e := gatedExecutor(analyzer, replayer, approver, time.Minute)
+	recorder := &fakeRecorder{}
+	e := NewExecutor(analyzer, replayer, ExecutorOptions{
+		MaxAttempts:     3,
+		LatencyBudget:   time.Minute,
+		Approver:        approver,
+		ApprovalTimeout: 5 * time.Second,
+		RetryBaseDelay:  time.Millisecond,
+		AutoRecorder:    recorder,
+	})
 
 	result, err := e.ExecuteHealing(testFailedRequest())
 	if err != nil {
@@ -269,7 +289,65 @@ func TestGateDisabledAtRuntimeHealsWithoutAsking(t *testing.T) {
 		t.Fatalf("pendings = %d, want 0 — a disabled gate must not publish decisions", len(approver.pendings))
 	}
 	if len(approver.outcomes) != 0 {
-		t.Fatalf("outcomes = %d, want 0 — a disabled gate must not record outcomes", len(approver.outcomes))
+		t.Fatalf("outcomes = %d, want 0 — a disabled gate must not record gated outcomes", len(approver.outcomes))
+	}
+	if len(recorder.outcomes) != 1 {
+		t.Fatalf("auto outcomes = %d, want 1 — ungated heals must still hit history", len(recorder.outcomes))
+	}
+	o := recorder.outcomes[0]
+	if !o.Healed || o.Action != ActionRetry || o.RequestID != "test-123" || o.Attempts != 1 {
+		t.Fatalf("auto outcome wrong: %+v", o)
+	}
+}
+
+func TestUngatedHealingRecordsAutoOutcome(t *testing.T) {
+	// No approver at all (auto_heal without the gate wired): the recorder
+	// still captures the outcome for the console feed.
+	replayer := &fakeReplayer{statuses: []int{502, 200}}
+	analyzer := &fakeAnalyzer{suggestion: retrySuggestion()}
+	recorder := &fakeRecorder{}
+	e := NewExecutor(analyzer, replayer, ExecutorOptions{
+		MaxAttempts:    3,
+		LatencyBudget:  time.Minute,
+		RetryBaseDelay: time.Millisecond,
+		AutoRecorder:   recorder,
+	})
+
+	result, err := e.ExecuteHealing(testFailedRequest())
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result.StatusCode != 200 {
+		t.Fatalf("status = %d, want 200", result.StatusCode)
+	}
+	if len(recorder.outcomes) != 1 {
+		t.Fatalf("auto outcomes = %d, want 1", len(recorder.outcomes))
+	}
+	o := recorder.outcomes[0]
+	if !o.Healed || o.Attempts != 2 || o.Action != ActionRetry {
+		t.Fatalf("auto outcome = %+v, want healed retry with 2 attempts", o)
+	}
+}
+
+func TestUngatedFailureRecordsFailedAutoOutcome(t *testing.T) {
+	replayer := &fakeReplayer{statuses: []int{502, 502}}
+	analyzer := &fakeAnalyzer{suggestion: retrySuggestion()}
+	recorder := &fakeRecorder{}
+	e := NewExecutor(analyzer, replayer, ExecutorOptions{
+		MaxAttempts:    2,
+		LatencyBudget:  time.Minute,
+		RetryBaseDelay: time.Millisecond,
+		AutoRecorder:   recorder,
+	})
+
+	if _, err := e.ExecuteHealing(testFailedRequest()); err == nil {
+		t.Fatal("expected healing failure")
+	}
+	if len(recorder.outcomes) != 1 {
+		t.Fatalf("auto outcomes = %d, want 1", len(recorder.outcomes))
+	}
+	if recorder.outcomes[0].Healed {
+		t.Fatal("outcome must be marked as not healed")
 	}
 }
 

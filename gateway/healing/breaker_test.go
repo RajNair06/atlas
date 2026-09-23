@@ -41,14 +41,14 @@ func TestBreakerSuccessResetsCount(t *testing.T) {
 }
 
 func TestBreakerHalfOpenAfterResetWindow(t *testing.T) {
-	cb := NewCircuitBreaker("svc-a", 1, 20*time.Millisecond)
+	cb := NewCircuitBreaker("svc-a", 1, 500*time.Millisecond)
 
 	cb.RecordFailure()
 	if cb.Allow() {
 		t.Fatal("open breaker should deny")
 	}
 
-	time.Sleep(30 * time.Millisecond)
+	time.Sleep(600 * time.Millisecond)
 
 	if !cb.Allow() {
 		t.Fatal("should admit one trial after reset window (half-open)")
@@ -59,10 +59,10 @@ func TestBreakerHalfOpenAfterResetWindow(t *testing.T) {
 }
 
 func TestBreakerHalfOpenSuccessCloses(t *testing.T) {
-	cb := NewCircuitBreaker("svc-a", 1, 20*time.Millisecond)
+	cb := NewCircuitBreaker("svc-a", 1, 500*time.Millisecond)
 
 	cb.RecordFailure()
-	time.Sleep(30 * time.Millisecond)
+	time.Sleep(600 * time.Millisecond)
 	cb.Allow()
 	cb.RecordSuccess()
 
@@ -75,10 +75,10 @@ func TestBreakerHalfOpenSuccessCloses(t *testing.T) {
 }
 
 func TestBreakerHalfOpenFailureReopens(t *testing.T) {
-	cb := NewCircuitBreaker("svc-a", 1, 20*time.Millisecond)
+	cb := NewCircuitBreaker("svc-a", 1, 500*time.Millisecond)
 
 	cb.RecordFailure()
-	time.Sleep(30 * time.Millisecond)
+	time.Sleep(600 * time.Millisecond)
 	cb.Allow()
 	cb.RecordFailure()
 

@@ -3,6 +3,9 @@ package healing
 import (
 	"encoding/json"
 	"fmt"
+	"log/slog"
+	"net/http"
+	"strings"
 	"time"
 
 	"github.com/RajNair06/atlas/gateway/errors"
@@ -38,8 +41,27 @@ func NewDecisionEngine(llmClient *llm.GeminiClient) *DecisionEngine {
 	}
 }
 
-// AnalyzeError analyzes a failed request and returns a healing suggestion
+// AnalyzeError analyzes a failed request and returns a healing suggestion.
+// Gemini is the primary brain; when it is unreachable (overloaded, network
+// down, bad key) a deterministic rule-based suggestion takes over so the
+// healing pipeline — and the approval console — never stall on an external
+// dependency. The reasoning string always says which brain produced it.
 func (d *DecisionEngine) AnalyzeError(failedReq *errors.FailedRequest) (*HealingSuggestion, error) {
+	suggestion, err := d.analyzeWithLLM(failedReq)
+	if err == nil {
+		return suggestion, nil
+	}
+
+	slog.Warn("Gemini analysis failed, falling back to rule-based suggestion",
+		"request_id", failedReq.RequestID,
+		"error", err,
+	)
+	return ruleBasedSuggestion(failedReq), nil
+}
+
+// analyzeWithLLM is the Gemini path: build the prompt, call the model,
+// parse and validate the structured suggestion.
+func (d *DecisionEngine) analyzeWithLLM(failedReq *errors.FailedRequest) (*HealingSuggestion, error) {
 	prompt := buildPrompt(failedReq)
 
 	responseText, err := d.llmClient.GenerateContent(prompt)
@@ -54,6 +76,36 @@ func (d *DecisionEngine) AnalyzeError(failedReq *errors.FailedRequest) (*Healing
 
 	suggestion.Timestamp = time.Now()
 	return suggestion, nil
+}
+
+// ruleBasedSuggestion mirrors the guidance we give Gemini, in code:
+// transport failures, timeouts and 5xx are usually transient → retry
+// (the executor's last-resort chain still reaches the fallback if one is
+// configured); other 4xx are client errors → retrying cannot help → give_up.
+func ruleBasedSuggestion(failedReq *errors.FailedRequest) *HealingSuggestion {
+	body := strings.ToLower(failedReq.ErrorBody)
+	transient := failedReq.StatusCode >= 500 ||
+		failedReq.StatusCode == http.StatusRequestTimeout ||
+		failedReq.StatusCode == http.StatusTooManyRequests ||
+		strings.Contains(body, "connection refused") ||
+		strings.Contains(body, "unreachable") ||
+		strings.Contains(body, "timeout") ||
+		strings.Contains(body, "eof")
+
+	if transient {
+		return &HealingSuggestion{
+			Action: ActionRetry,
+			Reasoning: fmt.Sprintf("rule-based fallback (Gemini unavailable): status %d with %q looks transient — restarts and brief overloads usually clear, so retry",
+				failedReq.StatusCode, excerpt(failedReq.ErrorBody, 80)),
+			Timestamp: time.Now(),
+		}
+	}
+	return &HealingSuggestion{
+		Action: ActionGiveUp,
+		Reasoning: fmt.Sprintf("rule-based fallback (Gemini unavailable): status %d is a client-side error — retrying the same request cannot change the outcome",
+			failedReq.StatusCode),
+		Timestamp: time.Now(),
+	}
 }
 
 // buildPrompt creates the prompt for Gemini based on the failed request

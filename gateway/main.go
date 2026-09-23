@@ -90,6 +90,7 @@ func main() {
 		BreakerReset:     cfg.Server.BreakerReset,
 		Approver:         approver,
 		ApprovalTimeout:  cfg.Server.ApprovalTimeout,
+		AutoRecorder:     approvalStore,
 	})
 	gw.SetExecutor(executor)
 
@@ -101,6 +102,13 @@ func main() {
 
 	// Set up routing
 	mux := http.NewServeMux()
+	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/plain")
+		_, _ = w.Write([]byte("ok"))
+	})
+	mux.HandleFunc("GET /favicon.ico", func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, "/ui/favicon.svg", http.StatusFound)
+	})
 	mux.Handle("/healing/", healingHandler)
 	mux.Handle("/ui", ui)
 	mux.Handle("/ui/", ui)
