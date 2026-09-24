@@ -143,14 +143,6 @@
 ├── gateway.yaml.example   documented config template
 └── Makefile               build · gateway · test · clean</code></pre>
 
-    <h2>What's intentionally NOT here (yet)</h2>
-    <ul>
-      <li><b>Persistent history</b> — in-memory, capped at 50 entries; a database is the obvious next step.</li>
-      <li><b>Authentication on the console</b> — fine for localhost; required before any shared deployment.</li>
-      <li><b>Prometheus metrics</b> — the data exists in the stores; exposing <code>/metrics</code> is planned.</li>
-      <li><b>Streaming responses</b> — bodies are buffered (needed for capture/replay); large payloads would need a size-aware streaming path.</li>
-    </ul>
-
   </div>
 </section>
 

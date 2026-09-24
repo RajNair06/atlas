@@ -126,10 +126,6 @@ make gateway            # run everything locally
 
 CI runs `go vet` + `go test -race` on every push; the docs site deploys automatically via GitHub Pages.
 
-## Status
-
-Built in the open, increment by increment — the full day-by-day journey is in [`ROADMAP.md`](ROADMAP.md). Core loop (capture → analyze → approve → heal → audit) is complete and demo-stable. Next: Prometheus metrics, persistent history, console auth, container images.
-
 ---
 
 <p align="center"><sub>atlas · gemini suggests · humans decide · the gateway executes</sub></p>
