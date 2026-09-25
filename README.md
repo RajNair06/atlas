@@ -17,14 +17,14 @@
 </p>
 
 <p align="center">
-  <a href="https://rajnair06.github.io/atlas/"><b>📖 Documentation site</b></a> ·
-  <a href="https://github.com/RajNair06/atlas/blob/main/docs/assets/nav.mp4"><b>▶ Watch the 90-second demo</b></a> ·
+  <a href="https://rajnair06.github.io/atlas/"><b>Documentation site</b></a> ·
+  <a href="https://github.com/RajNair06/atlas/blob/main/docs/assets/nav.mp4"><b>Watch the 30-second demo</b></a> ·
   <a href="https://rajnair06.github.io/atlas/quickstart.html"><b>Quickstart</b></a>
 </p>
 
 ---
 
-## The 90-second story
+## The 30-second story
 
 A payment service dies mid-traffic:
 
@@ -49,12 +49,12 @@ A payment service dies mid-traffic:
 
 | | |
 |---|---|
-| 🧠 **LLM with guardrails** | Gemini chooses from a closed menu of actions; responses are schema-validated; hallucinated actions are rejected at the door |
-| 🛡️ **Rule-based fallback brain** | LLM down or overloaded? A deterministic rule engine keeps healing alive — and every suggestion discloses which brain produced it |
-| ✋ **Human-in-the-loop** | Approval gate blocks the request until a verdict arrives; toggle it live from the console, no restart |
-| ⚡ **Production patterns** | Per-upstream circuit breakers (~2ms fast-fail), exponential backoff, latency budgets, correlation IDs, graceful shutdown |
-| 📡 **Real-time console** | SSE + htmx + Go templates — zero npm dependencies, no build step, embedded in the binary |
-| 🔬 **Proven** | 114+ tests incl. full-stack E2E through the real proxy with fake LLMs; `-race` clean; ~92% proxy coverage |
+| **LLM with guardrails** | Gemini chooses from a closed menu of actions; responses are schema-validated; hallucinated actions are rejected at the door |
+| **Rule-based fallback brain** | LLM down or overloaded? A deterministic rule engine keeps healing alive — and every suggestion discloses which brain produced it |
+| **Human-in-the-loop** | Approval gate blocks the request until a verdict arrives; toggle it live from the console, no restart |
+| **Production patterns** | Per-upstream circuit breakers (~2ms fast-fail), exponential backoff, latency budgets, correlation IDs, graceful shutdown |
+| **Real-time console** | SSE + htmx + Go templates — zero npm dependencies, no build step, embedded in the binary |
+| **Proven** | 114+ tests incl. full-stack E2E through the real proxy with fake LLMs; `-race` clean; ~92% proxy coverage |
 
 ## Quickstart
 
